@@ -55,6 +55,7 @@ struct blk_plug;
 struct bpf_local_storage;
 struct bpf_run_ctx;
 struct bpf_net_context;
+struct bpf_user_writable;
 struct capture_control;
 struct cfs_rq;
 struct fs_struct;
@@ -1541,6 +1542,10 @@ struct task_struct {
 	struct bpf_local_storage __rcu	*bpf_storage;
 	/* Used for BPF run context */
 	struct bpf_run_ctx		*bpf_ctx;
+#ifdef CONFIG_BPF_EVENTS
+	/* Used for bpf_probe_write_user_registered() */
+	struct bpf_user_writable	*bpf_user_writable;
+#endif
 #endif
 	/* Used by BPF for per-TASK xdp storage */
 	struct bpf_net_context		*bpf_net_context;

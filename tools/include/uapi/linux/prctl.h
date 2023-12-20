@@ -328,4 +328,9 @@ struct prctl_mm_map {
 # define PR_PPC_DEXCR_CTRL_CLEAR_ONEXEC	0x10 /* Clear the aspect on exec */
 # define PR_PPC_DEXCR_CTRL_MASK		0x1f
 
+/* Register tagged writable memory region for the current task. */
+#define PR_BPF_REGISTER_WRITABLE	74
+/* Unregister tagged writable memory region for the current task. */
+#define PR_BPF_UNREGISTER_WRITABLE	75
+
 #endif /* _LINUX_PRCTL_H */
