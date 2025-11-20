@@ -99,10 +99,7 @@ Keywords
 ~~~~~~~~
 
 .. kernel-doc:: include/linux/compiler-context-analysis.h
-   :identifiers: context_guard_struct
-                 token_context_guard token_context_guard_instance
-                 __guarded_by __pt_guarded_by
-                 __must_hold
+   :identifiers: __must_hold
                  __must_not_hold
                  __acquires
                  __cond_acquires
@@ -119,6 +116,11 @@ Keywords
                  __acquire_shared_ret
                  context_unsafe
                  __context_unsafe
+
+.. kernel-doc:: include/linux/compiler-context-analysis-clang.h
+   :identifiers: __guarded_by __pt_guarded_by
+                 context_guard_struct
+                 token_context_guard token_context_guard_instance
                  disable_context_analysis enable_context_analysis
 
 .. note::
