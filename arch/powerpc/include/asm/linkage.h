@@ -13,4 +13,13 @@
 	     "\t.globl ." #alias "\n\t.set ." #alias ", ." #name)
 #endif
 
+#define _THIS_IP_ ({				\
+	unsigned long __ip;			\
+	asm volatile("bcl 20,31,1f\n\t"		\
+		     "1: mflr %0"		\
+		     : "=r" (__ip) : : "lr"	\
+	);					\
+	__ip;					\
+})
+
 #endif	/* _ASM_POWERPC_LINKAGE_H */
