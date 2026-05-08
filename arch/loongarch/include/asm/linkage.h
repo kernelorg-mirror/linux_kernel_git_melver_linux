@@ -77,4 +77,6 @@
 
 #define SYM_SIGFUNC_END(name) SYM_FUNC_END(name)
 
+#define _THIS_IP_ ({ unsigned long __ip; asm volatile("pcaddi %0, 0" : "=r" (__ip)); __ip; })
+
 #endif
