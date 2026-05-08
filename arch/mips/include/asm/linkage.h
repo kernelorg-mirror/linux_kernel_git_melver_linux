@@ -10,4 +10,14 @@
 #define SYSCALL_ALIAS(alias, name)					\
 	asm ( #alias " = " #name "\n\t.globl " #alias)
 
+#define _THIS_IP_ ({				\
+	unsigned long __ip;			\
+	asm volatile("bal 1f\n\t"		\
+		     " nop\n\t"			\
+		     "1: move %0, $ra"		\
+		     : "=r" (__ip) : : "$31"	\
+	);					\
+	__ip;					\
+})
+
 #endif
