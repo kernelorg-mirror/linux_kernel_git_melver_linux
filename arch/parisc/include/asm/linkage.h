@@ -37,4 +37,12 @@ name:		ASM_NL\
 
 #endif /* __ASSEMBLER__ */
 
+#define _THIS_IP_ ({				\
+	unsigned long __ip;			\
+	asm volatile("b,l 1f, %0\n\t"		\
+		     " nop\n\t"			\
+		     "1:" : "=r" (__ip));	\
+	__ip;					\
+})
+
 #endif  /* __ASM_PARISC_LINKAGE_H */
