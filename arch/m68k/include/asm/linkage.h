@@ -35,4 +35,6 @@
 	__asmlinkage_protect_n(ret, "m" (arg1), "m" (arg2), "m" (arg3), \
 			      "m" (arg4), "m" (arg5), "m" (arg6))
 
+#define _THIS_IP_ ({ unsigned long __ip; asm volatile("lea %%pc@(.), %0" : "=a" (__ip)); __ip; })
+
 #endif
