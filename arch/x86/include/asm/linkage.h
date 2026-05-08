@@ -13,11 +13,12 @@
  * The generic version tends to create spurious ENDBR instructions under
  * certain conditions.
  */
-#define _THIS_IP_ ({ unsigned long __here; asm ("lea 0(%%rip), %0" : "=r" (__here)); __here; })
+#define _THIS_IP_ ({ unsigned long __here; asm volatile("lea 0(%%rip), %0" : "=r" (__here)); __here; })
 #endif
 
 #ifdef CONFIG_X86_32
 #define asmlinkage CPP_ASMLINKAGE __attribute__((regparm(0)))
+#define _THIS_IP_ ({ unsigned long __ip; asm volatile("call 1f\n1: pop %0" : "=r" (__ip)); __ip; })
 #endif /* CONFIG_X86_32 */
 
 #define __ALIGN		.balign CONFIG_FUNCTION_ALIGNMENT, 0x90;
