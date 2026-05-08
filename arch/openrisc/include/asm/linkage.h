@@ -18,4 +18,14 @@
 #define __ALIGN      .align 0
 #define __ALIGN_STR ".align 0"
 
+#define _THIS_IP_ ({				\
+	unsigned long __ip;			\
+	asm volatile("l.jal 1f\n\t"		\
+		     " l.nop\n\t"		\
+		     "1: l.ori %0, r9, 0"	\
+		     : "=r" (__ip) : : "r9"	\
+	);					\
+	__ip;					\
+})
+
 #endif /* __ASM_OPENRISC_LINKAGE_H */
