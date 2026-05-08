@@ -75,6 +75,8 @@
 #define __arcfp_data __section(".data")
 #endif
 
+#define _THIS_IP_ ({ unsigned long __ip; asm volatile("mov %0, pcl" : "=r" (__ip)); __ip; })
+
 #endif /* __ASSEMBLER__ */
 
 #endif
