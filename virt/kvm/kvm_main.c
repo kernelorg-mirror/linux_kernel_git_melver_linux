@@ -558,31 +558,14 @@ static void kvm_null_fn(void)
 	     node;							     \
 	     node = interval_tree_iter_next(node, start, last))	     \
 
-static __always_inline kvm_mn_ret_t kvm_handle_hva_range(struct kvm *kvm,
-							 const struct kvm_mmu_notifier_range *range)
+static __always_inline bool __kvm_handle_hva_range_walk(struct kvm *kvm,
+							const struct kvm_mmu_notifier_range *range)
 {
-	struct kvm_mmu_notifier_return r = {
-		.ret = false,
-		.found_memslot = false,
-	};
 	struct kvm_gfn_range gfn_range;
 	struct kvm_memory_slot *slot;
 	struct kvm_memslots *slots;
-	int i, idx;
-
-	if (WARN_ON_ONCE(range->end <= range->start))
-		return r;
-
-	/* A null handler is allowed if and only if on_lock() is provided. */
-	if (WARN_ON_ONCE(IS_KVM_NULL_FN(range->on_lock) &&
-			 IS_KVM_NULL_FN(range->handler)))
-		return r;
-
-	/* on_lock will never be called for lockless walks */
-	if (WARN_ON_ONCE(range->lockless && !IS_KVM_NULL_FN(range->on_lock)))
-		return r;
-
-	idx = srcu_read_lock(&kvm->srcu);
+	bool ret = false;
+	int i;
 
 	for (i = 0; i < kvm_arch_nr_memslot_as_ids(kvm); i++) {
 		struct interval_tree_node *node;
@@ -620,28 +603,67 @@ static __always_inline kvm_mn_ret_t kvm_handle_hva_range(struct kvm *kvm,
 			gfn_range.slot = slot;
 			gfn_range.lockless = range->lockless;
 
-			if (!r.found_memslot) {
-				r.found_memslot = true;
-				if (!range->lockless) {
-					KVM_MMU_LOCK(kvm);
-					if (!IS_KVM_NULL_FN(range->on_lock))
-						range->on_lock(kvm);
-
-					if (IS_KVM_NULL_FN(range->handler))
-						goto mmu_unlock;
-				}
-			}
-			r.ret |= range->handler(kvm, &gfn_range);
+			ret |= range->handler(kvm, &gfn_range);
 		}
 	}
 
-	if (range->flush_on_ret && r.ret)
-		kvm_flush_remote_tlbs(kvm);
+	return ret;
+}
 
-mmu_unlock:
-	if (r.found_memslot && !range->lockless)
+static __always_inline kvm_mn_ret_t kvm_handle_hva_range(struct kvm *kvm,
+							 const struct kvm_mmu_notifier_range *range)
+{
+	struct kvm_mmu_notifier_return r = {
+		.ret = false,
+		.found_memslot = false,
+	};
+	struct kvm_memslots *slots;
+	int i, idx;
+
+	if (WARN_ON_ONCE(range->end <= range->start))
+		return r;
+
+	/* A null handler is allowed if and only if on_lock() is provided. */
+	if (WARN_ON_ONCE(IS_KVM_NULL_FN(range->on_lock) &&
+			 IS_KVM_NULL_FN(range->handler)))
+		return r;
+
+	/* on_lock will never be called for lockless walks */
+	if (WARN_ON_ONCE(range->lockless && !IS_KVM_NULL_FN(range->on_lock)))
+		return r;
+
+	idx = srcu_read_lock(&kvm->srcu);
+
+	for (i = 0; i < kvm_arch_nr_memslot_as_ids(kvm); i++) {
+		slots = __kvm_memslots(kvm, i);
+		if (interval_tree_iter_first(&slots->hva_tree, range->start, range->end - 1)) {
+			r.found_memslot = true;
+			break;
+		}
+	}
+
+	if (!r.found_memslot)
+		goto out;
+
+	if (range->lockless) {
+		r.ret = __kvm_handle_hva_range_walk(kvm, range);
+		if (range->flush_on_ret && r.ret)
+			kvm_flush_remote_tlbs(kvm);
+	} else {
+		KVM_MMU_LOCK(kvm);
+		if (!IS_KVM_NULL_FN(range->on_lock))
+			range->on_lock(kvm);
+
+		if (!IS_KVM_NULL_FN(range->handler))
+			r.ret = __kvm_handle_hva_range_walk(kvm, range);
+
+		if (range->flush_on_ret && r.ret)
+			kvm_flush_remote_tlbs(kvm);
+
 		KVM_MMU_UNLOCK(kvm);
+	}
 
+out:
 	srcu_read_unlock(&kvm->srcu, idx);
 
 	return r;
