@@ -124,10 +124,16 @@ static void __kvm_gmem_invalidate_start(struct gmem_file *f, pgoff_t start,
 					pgoff_t end,
 					enum kvm_gfn_range_filter attr_filter)
 {
-	bool flush = false, found_memslot = false;
+	bool flush = false;
 	struct kvm_memory_slot *slot;
 	struct kvm *kvm = f->kvm;
-	unsigned long index;
+	pgoff_t index = start;
+
+	if (!xa_find(&f->bindings, &index, end - 1, XA_PRESENT))
+		return;
+
+	KVM_MMU_LOCK(kvm);
+	kvm_mmu_invalidate_start(kvm);
 
 	xa_for_each_range(&f->bindings, index, slot, start, end - 1) {
 		pgoff_t pgoff = slot->gmem.pgoff;
@@ -140,13 +146,6 @@ static void __kvm_gmem_invalidate_start(struct gmem_file *f, pgoff_t start,
 			.attr_filter = attr_filter,
 		};
 
-		if (!found_memslot) {
-			found_memslot = true;
-
-			KVM_MMU_LOCK(kvm);
-			kvm_mmu_invalidate_start(kvm);
-		}
-
 		flush |= kvm_mmu_unmap_gfn_range(kvm, &gfn_range);
 
 #ifdef CONFIG_HAVE_KVM_ARCH_GMEM_INVALIDATE
@@ -157,8 +156,7 @@ static void __kvm_gmem_invalidate_start(struct gmem_file *f, pgoff_t start,
 	if (flush)
 		kvm_flush_remote_tlbs(kvm);
 
-	if (found_memslot)
-		KVM_MMU_UNLOCK(kvm);
+	KVM_MMU_UNLOCK(kvm);
 }
 
 static void kvm_gmem_invalidate_start(struct inode *inode, pgoff_t start,
