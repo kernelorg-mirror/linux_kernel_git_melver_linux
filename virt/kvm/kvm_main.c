@@ -560,6 +560,7 @@ static void kvm_null_fn(void)
 
 static __always_inline bool __kvm_handle_hva_range_walk(struct kvm *kvm,
 							const struct kvm_mmu_notifier_range *range)
+	__must_hold_shared(&kvm->srcu)
 {
 	struct kvm_gfn_range gfn_range;
 	struct kvm_memory_slot *slot;
@@ -1379,6 +1380,7 @@ static int kvm_vm_release(struct inode *inode, struct file *filp)
 }
 
 int kvm_trylock_all_vcpus(struct kvm *kvm)
+	__context_unsafe(/* multi-lock acquisition */)
 {
 	struct kvm_vcpu *vcpu;
 	unsigned long i, j;
@@ -1401,6 +1403,7 @@ out_unlock:
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_trylock_all_vcpus);
 
 int kvm_lock_all_vcpus(struct kvm *kvm)
+	__context_unsafe(/* multi-lock acquisition */)
 {
 	struct kvm_vcpu *vcpu;
 	unsigned long i, j;
@@ -1426,6 +1429,7 @@ out_unlock:
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_lock_all_vcpus);
 
 void kvm_unlock_all_vcpus(struct kvm *kvm)
+	__context_unsafe(/* multi-lock release */)
 {
 	struct kvm_vcpu *vcpu;
 	unsigned long i;
@@ -1453,7 +1457,9 @@ static int kvm_alloc_dirty_bitmap(struct kvm_memory_slot *memslot)
 }
 
 static struct kvm_memslots *kvm_get_inactive_memslots(struct kvm *kvm, int as_id)
+	__must_hold(&kvm->slots_lock)
 {
+	__assume_shared_ctx_lock(&kvm->srcu); /* update-side lock is held */
 	struct kvm_memslots *active = __kvm_memslots(kvm, as_id);
 	int node_idx_inactive = active->node_idx ^ 1;
 
@@ -1535,6 +1541,7 @@ static void kvm_replace_gfn_node(struct kvm_memslots *slots,
 static void kvm_replace_memslot(struct kvm *kvm,
 				struct kvm_memory_slot *old,
 				struct kvm_memory_slot *new)
+	__must_hold(&kvm->slots_lock)
 {
 	int as_id = kvm_memslots_get_as_id(old, new);
 	struct kvm_memslots *slots = kvm_get_inactive_memslots(kvm, as_id);
@@ -1621,9 +1628,11 @@ static int check_memory_region_flags(struct kvm *kvm,
 }
 
 static void kvm_swap_active_memslots(struct kvm *kvm, int as_id)
+	__must_hold(&kvm->slots_lock)
+	__releases(&kvm->slots_arch_lock)
 {
 	struct kvm_memslots *slots = kvm_get_inactive_memslots(kvm, as_id);
-
+	__assume_shared_ctx_lock(&kvm->srcu); /* update-side locks are held */
 	/* Grab the generation from the activate memslots. */
 	u64 gen = __kvm_memslots(kvm, as_id)->generation;
 
@@ -1796,6 +1805,8 @@ static void kvm_commit_memory_region(struct kvm *kvm,
 static void kvm_activate_memslot(struct kvm *kvm,
 				 struct kvm_memory_slot *old,
 				 struct kvm_memory_slot *new)
+	__must_hold(&kvm->slots_lock)
+	__releases(&kvm->slots_arch_lock)
 {
 	int as_id = kvm_memslots_get_as_id(old, new);
 
@@ -1821,6 +1832,8 @@ static void kvm_copy_memslot(struct kvm_memory_slot *dest,
 static void kvm_invalidate_memslot(struct kvm *kvm,
 				   struct kvm_memory_slot *old,
 				   struct kvm_memory_slot *invalid_slot)
+	__must_hold(&kvm->slots_lock)
+	__must_hold(&kvm->slots_arch_lock)
 {
 	/*
 	 * Mark the current slot INVALID.  As with all memslot modifications,
@@ -1862,6 +1875,8 @@ static void kvm_invalidate_memslot(struct kvm *kvm,
 
 static void kvm_create_memslot(struct kvm *kvm,
 			       struct kvm_memory_slot *new)
+	__must_hold(&kvm->slots_lock)
+	__releases(&kvm->slots_arch_lock)
 {
 	/* Add the new memslot to the inactive set and activate. */
 	kvm_replace_memslot(kvm, NULL, new);
@@ -1871,6 +1886,8 @@ static void kvm_create_memslot(struct kvm *kvm,
 static void kvm_delete_memslot(struct kvm *kvm,
 			       struct kvm_memory_slot *old,
 			       struct kvm_memory_slot *invalid_slot)
+	__must_hold(&kvm->slots_lock)
+	__releases(&kvm->slots_arch_lock)
 {
 	/*
 	 * Remove the old memslot (in the inactive memslots) by passing NULL as
@@ -1884,6 +1901,8 @@ static void kvm_move_memslot(struct kvm *kvm,
 			     struct kvm_memory_slot *old,
 			     struct kvm_memory_slot *new,
 			     struct kvm_memory_slot *invalid_slot)
+	__must_hold(&kvm->slots_lock)
+	__releases(&kvm->slots_arch_lock)
 {
 	/*
 	 * Replace the old memslot in the inactive slots, and then swap slots
@@ -1896,6 +1915,8 @@ static void kvm_move_memslot(struct kvm *kvm,
 static void kvm_update_flags_memslot(struct kvm *kvm,
 				     struct kvm_memory_slot *old,
 				     struct kvm_memory_slot *new)
+	__must_hold(&kvm->slots_lock)
+	__releases(&kvm->slots_arch_lock)
 {
 	/*
 	 * Similar to the MOVE case, but the slot doesn't need to be zapped as
@@ -1910,6 +1931,7 @@ static int kvm_set_memslot(struct kvm *kvm,
 			   struct kvm_memory_slot *old,
 			   struct kvm_memory_slot *new,
 			   enum kvm_mr_change change)
+	__must_hold(&kvm->slots_lock)
 {
 	struct kvm_memory_slot *invalid_slot;
 	int r;
@@ -2016,6 +2038,7 @@ static bool kvm_check_memslot_overlap(struct kvm_memslots *slots, int id,
 
 static int kvm_set_memory_region(struct kvm *kvm,
 				 const struct kvm_userspace_memory_region2 *mem)
+	__must_hold(&kvm->slots_lock)
 {
 	struct kvm_memory_slot *old, *new;
 	struct kvm_memslots *slots;
@@ -2026,6 +2049,7 @@ static int kvm_set_memory_region(struct kvm *kvm,
 	int r;
 
 	lockdep_assert_held(&kvm->slots_lock);
+	__assume_shared_ctx_lock(&kvm->srcu); /* update-side lock is held */
 
 	r = check_memory_region_flags(kvm, mem);
 	if (r)
@@ -2242,6 +2266,7 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_get_dirty_log);
  *
  */
 static int kvm_get_dirty_log_protect(struct kvm *kvm, struct kvm_dirty_log *log)
+	__must_hold(&kvm->slots_lock)
 {
 	struct kvm_memslots *slots;
 	struct kvm_memory_slot *memslot;
@@ -2260,6 +2285,7 @@ static int kvm_get_dirty_log_protect(struct kvm *kvm, struct kvm_dirty_log *log)
 	if (as_id >= kvm_arch_nr_memslot_as_ids(kvm) || id >= KVM_USER_MEM_SLOTS)
 		return -EINVAL;
 
+	__assume_shared_ctx_lock(&kvm->srcu); /* update-side lock is held */
 	slots = __kvm_memslots(kvm, as_id);
 	memslot = id_to_memslot(slots, id);
 	if (!memslot || !memslot->dirty_bitmap)
@@ -2353,6 +2379,7 @@ static int kvm_vm_ioctl_get_dirty_log(struct kvm *kvm,
  */
 static int kvm_clear_dirty_log_protect(struct kvm *kvm,
 				       struct kvm_clear_dirty_log *log)
+	__must_hold(&kvm->slots_lock)
 {
 	struct kvm_memslots *slots;
 	struct kvm_memory_slot *memslot;
@@ -2375,6 +2402,7 @@ static int kvm_clear_dirty_log_protect(struct kvm *kvm,
 	if (log->first_page & 63)
 		return -EINVAL;
 
+	__assume_shared_ctx_lock(&kvm->srcu); /* update-side lock is held */
 	slots = __kvm_memslots(kvm, as_id);
 	memslot = id_to_memslot(slots, id);
 	if (!memslot || !memslot->dirty_bitmap)
@@ -2487,6 +2515,7 @@ bool kvm_range_has_memory_attributes(struct kvm *kvm, gfn_t start, gfn_t end,
 
 static __always_inline bool __kvm_handle_gfn_range_walk(struct kvm *kvm,
 							struct kvm_mmu_notifier_range *range)
+	__must_hold(&kvm->slots_lock)
 {
 	struct kvm_gfn_range gfn_range;
 	struct kvm_memory_slot *slot;
@@ -2506,6 +2535,7 @@ static __always_inline bool __kvm_handle_gfn_range_walk(struct kvm *kvm,
 	 * if the private flag is being toggled, i.e. all mappings are in play.
 	 */
 
+	__assume_shared_ctx_lock(&kvm->srcu); /* update-side lock is held */
 	for (i = 0; i < kvm_arch_nr_memslot_as_ids(kvm); i++) {
 		slots = __kvm_memslots(kvm, i);
 
@@ -2527,6 +2557,7 @@ static __always_inline bool __kvm_handle_gfn_range_walk(struct kvm *kvm,
 
 static __always_inline void kvm_handle_gfn_range(struct kvm *kvm,
 						 struct kvm_mmu_notifier_range *range)
+	__must_hold(&kvm->slots_lock)
 {
 	struct kvm_memslot_iter iter;
 	struct kvm_memslots *slots;
@@ -2534,6 +2565,7 @@ static __always_inline void kvm_handle_gfn_range(struct kvm *kvm,
 	bool ret;
 	int i;
 
+	__assume_shared_ctx_lock(&kvm->srcu); /* update-side lock is held */
 	for (i = 0; i < kvm_arch_nr_memslot_as_ids(kvm); i++) {
 		slots = __kvm_memslots(kvm, i);
 		kvm_for_each_memslot_in_gfn_range(&iter, slots, range->start, range->end) {
@@ -3201,8 +3233,10 @@ void kvm_vcpu_unmap(struct kvm_vcpu *vcpu, struct kvm_host_map *map)
 		memunmap(map->hva);
 #endif
 
-	if (map->writable)
+	if (map->writable) {
+		__assume_shared_ctx_lock(&vcpu->kvm->srcu); /* srcu held or VM being destroyed */
 		kvm_vcpu_mark_page_dirty(vcpu, map->gfn);
+	}
 
 	if (map->pinned_page) {
 		if (map->writable)
@@ -5075,6 +5109,7 @@ bool kvm_are_all_memslots_empty(struct kvm *kvm)
 	int i;
 
 	lockdep_assert_held(&kvm->slots_lock);
+	__assume_shared_ctx_lock(&kvm->srcu); /* update-side lock is held */
 
 	for (i = 0; i < kvm_arch_nr_memslot_as_ids(kvm); i++) {
 		if (!kvm_memslots_empty(__kvm_memslots(kvm, i)))
@@ -5930,6 +5965,7 @@ static int __kvm_io_bus_write(struct kvm_vcpu *vcpu, struct kvm_io_bus *bus,
 }
 
 static struct kvm_io_bus *kvm_get_bus_srcu(struct kvm *kvm, enum kvm_bus idx)
+	__must_hold_shared(&kvm->srcu)
 {
 	/*
 	 * Ensure that any updates to kvm_buses[] observed by the previous vCPU

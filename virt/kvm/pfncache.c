@@ -153,6 +153,7 @@ static inline bool mmu_notifier_retry_cache(struct kvm *kvm, unsigned long mmu_s
 }
 
 static kvm_pfn_t hva_to_pfn_retry(struct gfn_to_pfn_cache *gpc)
+	__must_hold(&gpc->lock)
 {
 	/* Note, the new page offset may be different than the old! */
 	void *old_khva = (void *)PAGE_ALIGN_DOWN((uintptr_t)gpc->khva);
@@ -254,6 +255,7 @@ out_error:
 }
 
 static int __kvm_gpc_refresh(struct gfn_to_pfn_cache *gpc, gpa_t gpa, unsigned long uhva)
+	__must_hold_shared(&gpc->kvm->srcu)
 {
 	unsigned long page_offset;
 	bool unmap_old = false;
@@ -396,6 +398,7 @@ void kvm_gpc_init(struct gfn_to_pfn_cache *gpc, struct kvm *kvm)
 
 static int __kvm_gpc_activate(struct gfn_to_pfn_cache *gpc, gpa_t gpa, unsigned long uhva,
 			      unsigned long len)
+	__must_hold_shared(&gpc->kvm->srcu)
 {
 	struct kvm *kvm = gpc->kvm;
 

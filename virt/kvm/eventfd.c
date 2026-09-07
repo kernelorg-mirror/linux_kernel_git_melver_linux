@@ -271,6 +271,7 @@ irqfd_wakeup(wait_queue_entry_t *wait, unsigned mode, int sync, void *key)
 }
 
 static void irqfd_update(struct kvm *kvm, struct kvm_kernel_irqfd *irqfd)
+	__must_hold_shared(&kvm->irq_srcu)
 {
 	struct kvm_kernel_irq_routing_entry *e;
 	struct kvm_kernel_irq_routing_entry entries[KVM_NR_IRQCHIPS];
@@ -300,6 +301,7 @@ struct kvm_irqfd_pt {
 
 static void kvm_irqfd_register(struct file *file, wait_queue_head_t *wqh,
 			       poll_table *pt)
+	__must_hold_shared(&container_of(pt, struct kvm_irqfd_pt, pt)->kvm->irq_srcu)
 {
 	struct kvm_irqfd_pt *p = container_of(pt, struct kvm_irqfd_pt, pt);
 	struct kvm_kernel_irqfd *irqfd = p->irqfd;
@@ -659,6 +661,9 @@ kvm_irqfd_release(struct kvm *kvm)
 void kvm_irq_routing_update(struct kvm *kvm)
 {
 	struct kvm_kernel_irqfd *irqfd;
+
+	/* Update-side mutex kvm->irq_lock is held. */
+	__assume_shared_ctx_lock(&kvm->irq_srcu);
 
 	spin_lock_irq(&kvm->irqfds.lock);
 

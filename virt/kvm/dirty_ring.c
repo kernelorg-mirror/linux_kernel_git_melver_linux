@@ -51,6 +51,7 @@ static bool kvm_dirty_ring_full(struct kvm_dirty_ring *ring)
 }
 
 static void kvm_reset_dirty_gfn(struct kvm *kvm, u32 slot, u64 offset, u64 mask)
+	__must_hold(&kvm->slots_lock)
 {
 	struct kvm_memory_slot *memslot;
 	int as_id, id;
@@ -61,6 +62,7 @@ static void kvm_reset_dirty_gfn(struct kvm *kvm, u32 slot, u64 offset, u64 mask)
 	if (as_id >= kvm_arch_nr_memslot_as_ids(kvm) || id >= KVM_USER_MEM_SLOTS)
 		return;
 
+	__assume_shared_ctx_lock(&kvm->srcu); /* update-side lock is held */
 	memslot = id_to_memslot(__kvm_memslots(kvm, as_id), id);
 
 	if (!memslot || offset >= memslot->npages ||

@@ -836,6 +836,7 @@ long kvm_gmem_populate(struct kvm *kvm, gfn_t start_gfn, void __user *src,
 	long i;
 
 	lockdep_assert_held(&kvm->slots_lock);
+	__assume_shared_ctx_lock(&kvm->srcu); /* update-side lock is held */
 
 	if (WARN_ON_ONCE(npages <= 0))
 		return -EINVAL;
