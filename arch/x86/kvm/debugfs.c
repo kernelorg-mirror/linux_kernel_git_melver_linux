@@ -109,6 +109,7 @@ static int kvm_mmu_rmaps_stat_show(struct seq_file *m, void *v)
 	}
 
 	mutex_lock(&kvm->slots_lock);
+	__assume_shared_ctx_lock(&kvm->srcu); /* update-side lock is held */
 	write_lock(&kvm->mmu_lock);
 
 	for (i = 0; i < kvm_arch_nr_memslot_as_ids(kvm); i++) {

@@ -10,7 +10,8 @@
 #ifdef CONFIG_X86_SGX_KVM
 extern bool __read_mostly enable_sgx;
 
-int handle_encls(struct kvm_vcpu *vcpu);
+int handle_encls(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 void setup_default_sgx_lepubkeyhash(void);
 void vcpu_setup_sgx_lepubkeyhash(struct kvm_vcpu *vcpu);

@@ -10,6 +10,8 @@ void svm_hv_inject_synthetic_vmexit_post_tlb_flush(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
+
 	/*
 	 * The exit code used by Hyper-V for software-defined exits is reserved
 	 * by AMD specifically for such use cases.

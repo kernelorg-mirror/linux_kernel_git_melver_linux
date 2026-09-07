@@ -17,23 +17,29 @@ enum nvmx_vmentry_status {
 	NVMX_VMENTRY_KVM_INTERNAL_ERROR,/* KVM internal error */
 };
 
-void vmx_leave_nested(struct kvm_vcpu *vcpu);
+void vmx_leave_nested(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
 void nested_vmx_setup_ctls_msrs(struct vmcs_config *vmcs_conf, u32 ept_caps);
 void nested_vmx_hardware_unsetup(void);
 __init int nested_vmx_hardware_setup(int (*exit_handlers[])(struct kvm_vcpu *));
 void nested_vmx_set_vmcs_shadowing_bitmap(void);
-int nested_vmx_check_restored_vmcs12(struct kvm_vcpu *vcpu);
+int nested_vmx_check_restored_vmcs12(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
 void nested_vmx_free_vcpu(struct kvm_vcpu *vcpu);
 enum nvmx_vmentry_status nested_vmx_enter_non_root_mode(struct kvm_vcpu *vcpu,
-						     bool from_vmentry);
-bool nested_vmx_reflect_vmexit(struct kvm_vcpu *vcpu);
+						     bool from_vmentry)
+	__must_hold_shared(&vcpu->kvm->srcu);
+bool nested_vmx_reflect_vmexit(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
 void __nested_vmx_vmexit(struct kvm_vcpu *vcpu, u32 vm_exit_reason,
 			 u32 exit_intr_info, unsigned long exit_qualification,
-			 u32 exit_insn_len);
+			 u32 exit_insn_len)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 static inline void nested_vmx_vmexit(struct kvm_vcpu *vcpu, u32 vm_exit_reason,
 				     u32 exit_intr_info,
 				     unsigned long exit_qualification)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	u32 exit_insn_len;
 
@@ -53,7 +59,8 @@ int vmx_get_vmx_msr(struct nested_vmx_msrs *msrs, u32 msr_index, u64 *pdata);
 int get_vmx_mem_address(struct kvm_vcpu *vcpu, unsigned long exit_qualification,
 			u32 vmx_instruction_info, bool wr, int len, gva_t *ret);
 bool nested_vmx_check_io_bitmaps(struct kvm_vcpu *vcpu, unsigned int port,
-				 int size);
+				 int size)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 static inline struct vmcs12 *get_vmcs12(struct kvm_vcpu *vcpu)
 {

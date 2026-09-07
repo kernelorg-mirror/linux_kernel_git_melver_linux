@@ -48,14 +48,16 @@ static inline bool nested_svm_is_l2_tlb_flush_hcall(struct kvm_vcpu *vcpu)
 	       kvm_hv_is_tlb_flush_hcall(vcpu);
 }
 
-void svm_hv_inject_synthetic_vmexit_post_tlb_flush(struct kvm_vcpu *vcpu);
+void svm_hv_inject_synthetic_vmexit_post_tlb_flush(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
 #else /* CONFIG_KVM_HYPERV */
 static inline void nested_svm_hv_update_vm_vp_ids(struct kvm_vcpu *vcpu) {}
 static inline bool nested_svm_is_l2_tlb_flush_hcall(struct kvm_vcpu *vcpu)
 {
 	return false;
 }
-static inline void svm_hv_inject_synthetic_vmexit_post_tlb_flush(struct kvm_vcpu *vcpu) {}
+static inline void svm_hv_inject_synthetic_vmexit_post_tlb_flush(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu) {}
 #endif /* CONFIG_KVM_HYPERV */
 
 #endif /* __ARCH_X86_KVM_SVM_HYPERV_H__ */

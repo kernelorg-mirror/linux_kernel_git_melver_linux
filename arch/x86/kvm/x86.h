@@ -249,6 +249,7 @@ static inline bool is_noncanonical_invlpg_address(u64 la, struct kvm_vcpu *vcpu)
 
 static inline void vcpu_cache_mmio_info(struct kvm_vcpu *vcpu,
 					gva_t gva, gfn_t gfn, unsigned access)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	u64 gen = kvm_memslots(vcpu->kvm)->generation;
 
@@ -266,6 +267,7 @@ static inline void vcpu_cache_mmio_info(struct kvm_vcpu *vcpu,
 }
 
 static inline bool vcpu_match_mmio_gen(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	return vcpu->arch.mmio_gen == kvm_memslots(vcpu->kvm)->generation;
 }
@@ -285,6 +287,7 @@ static inline void vcpu_clear_mmio_info(struct kvm_vcpu *vcpu, gva_t gva)
 }
 
 static inline bool vcpu_match_mmio_gva(struct kvm_vcpu *vcpu, unsigned long gva)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (vcpu_match_mmio_gen(vcpu) && vcpu->arch.mmio_gva &&
 	      vcpu->arch.mmio_gva == (gva & PAGE_MASK))
@@ -294,6 +297,7 @@ static inline bool vcpu_match_mmio_gva(struct kvm_vcpu *vcpu, unsigned long gva)
 }
 
 static inline bool vcpu_match_mmio_gpa(struct kvm_vcpu *vcpu, gpa_t gpa)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (vcpu_match_mmio_gen(vcpu) && vcpu->arch.mmio_gfn &&
 	      vcpu->arch.mmio_gfn == gpa >> PAGE_SHIFT)
@@ -328,7 +332,8 @@ void kvm_inject_realmode_interrupt(struct kvm_vcpu *vcpu, int irq, int inc_eip);
 u64 get_kvmclock_ns(struct kvm *kvm);
 uint64_t kvm_get_wall_clock_epoch(struct kvm *kvm);
 bool kvm_get_monotonic_and_clockread(s64 *kernel_ns, u64 *tsc_timestamp);
-int kvm_guest_time_update(struct kvm_vcpu *v);
+int kvm_guest_time_update(struct kvm_vcpu *v)
+	__must_hold_shared(&v->kvm->srcu);
 
 void kvm_synchronize_tsc(struct kvm_vcpu *vcpu, u64 *user_value);
 u64 kvm_scale_tsc(u64 tsc, u64 ratio);
@@ -355,13 +360,16 @@ static inline void adjust_tsc_offset_host(struct kvm_vcpu *vcpu, s64 adjustment)
 
 int kvm_read_guest_virt(struct kvm_vcpu *vcpu,
 	gva_t addr, void *val, unsigned int bytes,
-	struct x86_exception *exception);
+	struct x86_exception *exception)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 int kvm_write_guest_virt_system(struct kvm_vcpu *vcpu,
 	gva_t addr, void *val, unsigned int bytes,
-	struct x86_exception *exception);
+	struct x86_exception *exception)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
-int handle_ud(struct kvm_vcpu *vcpu);
+int handle_ud(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 void kvm_deliver_exception_payload(struct kvm_vcpu *vcpu,
 				   struct kvm_queued_exception *ex);
@@ -473,7 +481,8 @@ int kvm_emulate_mwait(struct kvm_vcpu *vcpu);
 int kvm_handle_invalid_op(struct kvm_vcpu *vcpu);
 int kvm_emulate_monitor(struct kvm_vcpu *vcpu);
 
-int kvm_fast_pio(struct kvm_vcpu *vcpu, int size, unsigned short port, int in);
+int kvm_fast_pio(struct kvm_vcpu *vcpu, int size, unsigned short port, int in)
+	__must_hold_shared(&vcpu->kvm->srcu);
 int kvm_emulate_cpuid(struct kvm_vcpu *vcpu);
 int kvm_emulate_halt(struct kvm_vcpu *vcpu);
 int kvm_emulate_halt_noskip(struct kvm_vcpu *vcpu);
@@ -526,7 +535,8 @@ void kvm_inject_nmi(struct kvm_vcpu *vcpu);
 int kvm_get_nr_pending_nmis(struct kvm_vcpu *vcpu);
 
 void __user *__x86_set_memory_region(struct kvm *kvm, int id, gpa_t gpa,
-				     u32 size);
+				     u32 size)
+	__must_hold(&kvm->slots_lock);
 int memslot_rmap_alloc(struct kvm_memory_slot *slot, unsigned long npages);
 
 bool kvm_vcpu_is_reset_bsp(struct kvm_vcpu *vcpu);
@@ -840,13 +850,16 @@ static inline void kvm_machine_check(void)
 int kvm_handle_memory_failure(struct kvm_vcpu *vcpu, int r,
 			      struct x86_exception *e);
 void kvm_invalidate_pcid(struct kvm_vcpu *vcpu, unsigned long pcid);
-int kvm_handle_invpcid(struct kvm_vcpu *vcpu, unsigned long type, gva_t gva);
+int kvm_handle_invpcid(struct kvm_vcpu *vcpu, unsigned long type, gva_t gva)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 int kvm_sev_es_mmio(struct kvm_vcpu *vcpu, bool is_write, gpa_t gpa,
-		    unsigned int bytes, void *data);
+		    unsigned int bytes, void *data)
+	__must_hold_shared(&vcpu->kvm->srcu);
 int kvm_sev_es_string_io(struct kvm_vcpu *vcpu, unsigned int size,
 			 unsigned int port, void *data,  unsigned int count,
-			 int in);
+			 int in)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 static inline void __kvm_prepare_emulated_mmio_exit(struct kvm_vcpu *vcpu,
 						    gpa_t gpa, unsigned int len,
@@ -886,7 +899,8 @@ static inline bool user_exit_on_hypercall(struct kvm *kvm, unsigned long hc_nr)
 }
 
 int ____kvm_emulate_hypercall(struct kvm_vcpu *vcpu, int cpl,
-			      int (*complete_hypercall)(struct kvm_vcpu *));
+			      int (*complete_hypercall)(struct kvm_vcpu *))
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 #define __kvm_emulate_hypercall(_vcpu, cpl, complete_hypercall)			\
 ({										\
@@ -898,6 +912,7 @@ int ____kvm_emulate_hypercall(struct kvm_vcpu *vcpu, int cpl,
 	__ret;									\
 })
 
-int kvm_emulate_hypercall(struct kvm_vcpu *vcpu);
+int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 #endif

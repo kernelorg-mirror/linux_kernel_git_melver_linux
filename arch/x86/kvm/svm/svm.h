@@ -818,7 +818,8 @@ bool svm_smi_blocked(struct kvm_vcpu *vcpu);
 bool svm_nmi_blocked(struct kvm_vcpu *vcpu);
 bool svm_interrupt_blocked(struct kvm_vcpu *vcpu);
 void svm_set_gif(struct vcpu_svm *svm, bool value);
-int svm_invoke_exit_handler(struct kvm_vcpu *vcpu, u64 exit_code);
+int svm_invoke_exit_handler(struct kvm_vcpu *vcpu, u64 exit_code)
+	__must_hold_shared(&vcpu->kvm->srcu);
 void set_msr_interception(struct kvm_vcpu *vcpu, u32 *msrpm, u32 msr,
 			  int read, int write);
 void svm_complete_interrupt_delivery(struct kvm_vcpu *vcpu, int delivery_mode,
@@ -870,17 +871,21 @@ static inline bool nested_exit_on_nmi(struct vcpu_svm *svm)
 
 int __init nested_svm_init_msrpm_merge_offsets(void);
 
-int enter_svm_guest_mode(struct kvm_vcpu *vcpu, u64 vmcb_gpa, bool from_vmrun);
+int enter_svm_guest_mode(struct kvm_vcpu *vcpu, u64 vmcb_gpa, bool from_vmrun)
+	__must_hold_shared(&vcpu->kvm->srcu);
 void svm_leave_nested(struct kvm_vcpu *vcpu);
 void svm_free_nested(struct vcpu_svm *svm);
 int svm_allocate_nested(struct vcpu_svm *svm);
-int nested_svm_vmrun(struct kvm_vcpu *vcpu);
+int nested_svm_vmrun(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
 void svm_copy_vmrun_state(struct vmcb_save_area *to_save,
 			  struct vmcb_save_area *from_save);
 void svm_copy_vmloadsave_state(struct vmcb *to_vmcb, struct vmcb *from_vmcb);
-void nested_svm_vmexit(struct vcpu_svm *svm);
+void nested_svm_vmexit(struct vcpu_svm *svm)
+	__must_hold_shared(&svm->vcpu.kvm->srcu);
 
 static inline void nested_svm_simple_vmexit(struct vcpu_svm *svm, u32 exit_code)
+	__must_hold_shared(&svm->vcpu.kvm->srcu)
 {
 	svm->vmcb->control.exit_code	= exit_code;
 	svm->vmcb->control.exit_info_1	= 0;
@@ -888,7 +893,8 @@ static inline void nested_svm_simple_vmexit(struct vcpu_svm *svm, u32 exit_code)
 	nested_svm_vmexit(svm);
 }
 
-int nested_svm_exit_handled(struct vcpu_svm *svm);
+int nested_svm_exit_handled(struct vcpu_svm *svm)
+	__must_hold_shared(&svm->vcpu.kvm->srcu);
 int nested_svm_check_permissions(struct kvm_vcpu *vcpu);
 int nested_svm_check_cached_vmcb12(struct kvm_vcpu *vcpu);
 int nested_svm_check_exception(struct vcpu_svm *svm, unsigned nr,
@@ -973,11 +979,13 @@ void avic_refresh_virtual_apic_mode(struct kvm_vcpu *vcpu);
 int pre_sev_run(struct vcpu_svm *svm, int cpu);
 void sev_init_vmcb(struct vcpu_svm *svm, bool init_event);
 void sev_vcpu_after_set_cpuid(struct vcpu_svm *svm);
-int sev_es_string_io(struct vcpu_svm *svm, int size, unsigned int port, int in);
+int sev_es_string_io(struct vcpu_svm *svm, int size, unsigned int port, int in)
+	__must_hold_shared(&svm->vcpu.kvm->srcu);
 void sev_es_recalc_msr_intercepts(struct kvm_vcpu *vcpu);
 void sev_vcpu_deliver_sipi_vector(struct kvm_vcpu *vcpu, u8 vector);
 void sev_es_prepare_switch_to_guest(struct vcpu_svm *svm, struct sev_es_save_area *hostsa);
-void sev_es_unmap_ghcb(struct vcpu_svm *svm);
+void sev_es_unmap_ghcb(struct vcpu_svm *svm)
+	__must_hold_shared(&svm->vcpu.kvm->srcu);
 
 #ifdef CONFIG_KVM_AMD_SEV
 bool sev_vcpu_needs_initialization(struct kvm_vcpu *vcpu);
@@ -989,7 +997,8 @@ int sev_mem_enc_unregister_region(struct kvm *kvm,
 int sev_vm_copy_enc_context_from(struct kvm *kvm, unsigned int source_fd);
 int sev_vm_move_enc_context_from(struct kvm *kvm, unsigned int source_fd);
 void sev_guest_memory_reclaimed(struct kvm *kvm);
-int sev_handle_vmgexit(struct kvm_vcpu *vcpu);
+int sev_handle_vmgexit(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 /* These symbols are used in common code and are stubbed below.  */
 
@@ -1010,7 +1019,8 @@ void sev_hardware_unsetup(void);
 int sev_cpu_init(struct svm_cpu_data *sd);
 int sev_dev_get_attr(u32 group, u64 attr, u64 *val);
 extern unsigned int max_sev_asid;
-void sev_handle_rmp_fault(struct kvm_vcpu *vcpu, gpa_t gpa, u64 error_code);
+void sev_handle_rmp_fault(struct kvm_vcpu *vcpu, gpa_t gpa, u64 error_code)
+	__must_hold_shared(&vcpu->kvm->srcu);
 int sev_gmem_make_private(struct kvm *kvm, gfn_t gfn, kvm_pfn_t pfn, kvm_pfn_t nr_pages);
 void sev_gmem_make_shared(kvm_pfn_t pfn, kvm_pfn_t nr_pages);
 void sev_gmem_invalidate_range(struct kvm *kvm, struct kvm_gfn_range *range);

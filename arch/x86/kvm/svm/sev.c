@@ -1117,6 +1117,7 @@ static int __sev_launch_update_vmsa(struct kvm *kvm, struct kvm_vcpu *vcpu,
 }
 
 static int sev_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
+	__must_hold(&kvm->lock)
 {
 	struct kvm_vcpu *vcpu;
 	unsigned long i;
@@ -1981,6 +1982,8 @@ static bool is_cmd_allowed_from_mirror(u32 cmd_id)
 }
 
 static int sev_lock_two_vms(struct kvm *dst_kvm, struct kvm *src_kvm)
+	__cond_acquires(0, &dst_kvm->lock)
+	__cond_acquires(0, &src_kvm->lock)
 {
 	struct kvm_sev_info *dst_sev = to_kvm_sev_info(dst_kvm);
 	struct kvm_sev_info *src_sev = to_kvm_sev_info(src_kvm);
@@ -2016,6 +2019,8 @@ release_dst:
 }
 
 static void sev_unlock_two_vms(struct kvm *dst_kvm, struct kvm *src_kvm)
+	__releases(&dst_kvm->lock)
+	__releases(&src_kvm->lock)
 {
 	struct kvm_sev_info *dst_sev = to_kvm_sev_info(dst_kvm);
 	struct kvm_sev_info *src_sev = to_kvm_sev_info(src_kvm);
@@ -2473,6 +2478,7 @@ static int snp_launch_update(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	 * situations.
 	 */
 	guard(mutex)(&kvm->slots_lock);
+	__assume_shared_ctx_lock(&kvm->srcu); /* update-side lock is held */
 
 	memslot = gfn_to_memslot(kvm, params.gfn_start);
 	if (!kvm_slot_has_gmem(memslot))
@@ -2503,6 +2509,7 @@ static int snp_launch_update(struct kvm *kvm, struct kvm_sev_cmd *argp)
 }
 
 static int snp_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
+	__must_hold(&kvm->lock)
 {
 	struct kvm_sev_info *sev = to_kvm_sev_info(kvm);
 	struct sev_data_snp_launch_update data = {};
@@ -2560,6 +2567,7 @@ out:
 }
 
 static int snp_launch_finish(struct kvm *kvm, struct kvm_sev_cmd *argp)
+	__must_hold(&kvm->lock)
 {
 	struct kvm_sev_info *sev = to_kvm_sev_info(kvm);
 	struct kvm_sev_snp_launch_finish params;
@@ -3622,6 +3630,7 @@ int pre_sev_run(struct vcpu_svm *svm, int cpu)
 
 #define GHCB_SCRATCH_AREA_LIMIT		(16ULL * PAGE_SIZE)
 static int setup_vmgexit_scratch(struct vcpu_svm *svm, bool sync, u64 min_len)
+	__must_hold_shared(&svm->vcpu.kvm->srcu)
 {
 	struct vmcb_control_area *control = &svm->vmcb->control;
 	u64 ghcb_scratch_beg, ghcb_scratch_end;
@@ -4036,6 +4045,7 @@ static void __sev_snp_reload_vmsa(struct kvm_vcpu *vcpu, gpa_t gpa)
 	kvm_pfn_t pfn;
 
 	lockdep_assert_held(&svm->sev_es.snp_vmsa_mutex);
+	lockdep_assert_held(&vcpu->kvm->srcu);
 
 	/*
 	 * Clear use of the VMSA.  Ensure snp_guest_vmsa_gpa is written exactly
@@ -4216,6 +4226,7 @@ static int sev_snp_ap_creation(struct vcpu_svm *svm)
 }
 
 static int snp_handle_guest_req(struct vcpu_svm *svm, gpa_t req_gpa, gpa_t resp_gpa)
+	__must_hold_shared(&svm->vcpu.kvm->srcu)
 {
 	struct sev_data_snp_guest_request data = {0};
 	struct kvm *kvm = svm->vcpu.kvm;
@@ -4262,9 +4273,12 @@ static int snp_req_certs_err(struct vcpu_svm *svm, u32 vmm_error)
 }
 
 static int snp_complete_req_certs(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	struct vmcb_control_area *control = &svm->vmcb->control;
+
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
 
 	switch (READ_ONCE(vcpu->run->snp_req_certs.ret)) {
 	case 0:
@@ -4285,6 +4299,7 @@ static int snp_complete_req_certs(struct kvm_vcpu *vcpu)
 }
 
 static int snp_handle_ext_guest_req(struct vcpu_svm *svm, gpa_t req_gpa, gpa_t resp_gpa)
+	__must_hold_shared(&svm->vcpu.kvm->srcu)
 {
 	struct kvm_vcpu *vcpu = &svm->vcpu;
 	struct kvm *kvm = vcpu->kvm;
@@ -4347,6 +4362,7 @@ request_invalid:
 }
 
 static int sev_handle_vmgexit_msr_protocol(struct vcpu_svm *svm)
+	__must_hold_shared(&svm->vcpu.kvm->srcu)
 {
 	struct vmcb_control_area *control = &svm->vmcb->control;
 	struct kvm_vcpu *vcpu = &svm->vcpu;
@@ -4508,6 +4524,8 @@ int sev_handle_vmgexit(struct kvm_vcpu *vcpu)
 	struct vcpu_svm *svm = to_svm(vcpu);
 	struct vmcb_control_area *control = &svm->vmcb->control;
 	u64 ghcb_gpa;
+
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
 
 	/* Validate the GHCB */
 	ghcb_gpa = control->ghcb_gpa;

@@ -1155,6 +1155,7 @@ static int complete_hypercall_exit(struct kvm_vcpu *vcpu)
 }
 
 static int tdx_emulate_vmcall(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	kvm_rax_write_raw(vcpu, to_tdx(vcpu)->vp_enter_args.r10);
 	kvm_rbx_write_raw(vcpu, to_tdx(vcpu)->vp_enter_args.r11);
@@ -1408,6 +1409,7 @@ static int tdx_complete_mmio_read(struct kvm_vcpu *vcpu)
 
 static inline int tdx_mmio_write(struct kvm_vcpu *vcpu, gpa_t gpa, int size,
 				 unsigned long val)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (!kvm_io_bus_write(vcpu, KVM_FAST_MMIO_BUS, gpa, 0, NULL)) {
 		trace_kvm_fast_mmio(gpa);
@@ -1422,6 +1424,7 @@ static inline int tdx_mmio_write(struct kvm_vcpu *vcpu, gpa_t gpa, int size,
 }
 
 static inline int tdx_mmio_read(struct kvm_vcpu *vcpu, gpa_t gpa, int size)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	unsigned long val;
 
@@ -1434,6 +1437,7 @@ static inline int tdx_mmio_read(struct kvm_vcpu *vcpu, gpa_t gpa, int size)
 }
 
 static int tdx_emulate_mmio(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_tdx *tdx = to_tdx(vcpu);
 	int size, write, r;
@@ -1912,6 +1916,7 @@ static inline bool tdx_is_sept_violation_unexpected_pending(struct kvm_vcpu *vcp
 }
 
 static int tdx_handle_ept_violation(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	unsigned long exit_qual;
 	gpa_t gpa = to_tdx(vcpu)->exit_gpa;
@@ -2723,6 +2728,7 @@ err_out:
 typedef void *tdx_vm_state_guard_t;
 
 static tdx_vm_state_guard_t tdx_acquire_vm_state_locks(struct kvm *kvm)
+	__context_unsafe(/* multi-lock acquisition */)
 {
 	int r;
 
@@ -2750,6 +2756,7 @@ out_err:
 }
 
 static void tdx_release_vm_state_locks(struct kvm *kvm)
+	__context_unsafe(/* multi-lock release */)
 {
 	mutex_unlock(&kvm->slots_lock);
 	kvm_unlock_all_vcpus(kvm);
@@ -3213,6 +3220,7 @@ static int tdx_gmem_post_populate(struct kvm *kvm, gfn_t gfn, kvm_pfn_t pfn,
 }
 
 static int tdx_vcpu_init_mem_region(struct kvm_vcpu *vcpu, struct kvm_tdx_cmd *cmd)
+	__must_hold(&vcpu->kvm->slots_lock)
 {
 	struct vcpu_tdx *tdx = to_tdx(vcpu);
 	struct kvm *kvm = vcpu->kvm;
@@ -3292,6 +3300,7 @@ int tdx_vcpu_unlocked_ioctl(struct kvm_vcpu *vcpu, void __user *argp)
 	CLASS(tdx_vm_state_guard, guard)(kvm);
 	if (IS_ERR(guard))
 		return PTR_ERR(guard);
+	lockdep_assert_held(&kvm->slots_lock);
 
 	if (!is_hkid_assigned(kvm_tdx) || kvm_tdx->state == TD_STATE_RUNNABLE)
 		return -EINVAL;

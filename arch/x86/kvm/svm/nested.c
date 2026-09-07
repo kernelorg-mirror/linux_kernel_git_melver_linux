@@ -38,9 +38,12 @@
 static void nested_svm_inject_npf_exit(struct kvm_vcpu *vcpu,
 				       struct x86_exception *fault,
 				       bool from_hardware)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	struct vmcb *vmcb = svm->vmcb;
+
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
 	u64 fault_stage;
 
 	/*
@@ -72,6 +75,7 @@ static void nested_svm_inject_npf_exit(struct kvm_vcpu *vcpu,
 }
 
 static u64 nested_svm_get_tdp_pdptr(struct kvm_vcpu *vcpu, int index)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	u64 cr3 = svm->nested.ctl.nested_cr3;
@@ -293,6 +297,7 @@ int __init nested_svm_init_msrpm_merge_offsets(void)
  * may contain zero bits.
  */
 static bool nested_svm_merge_msrpm(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	nsvm_msrpm_merge_t *msrpm02 = svm->nested.msrpm;
@@ -713,6 +718,7 @@ static void nested_svm_transition_tlb_flush(struct kvm_vcpu *vcpu)
  */
 static int nested_svm_load_cr3(struct kvm_vcpu *vcpu, unsigned long cr3,
 			       bool nested_npt, bool reload_pdptrs)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (CC(!kvm_vcpu_is_legal_cr3(vcpu, cr3)))
 		return -EINVAL;
@@ -1065,7 +1071,7 @@ int enter_svm_guest_mode(struct kvm_vcpu *vcpu, u64 vmcb12_gpa, bool from_vmrun)
 	nested_vmcb02_prepare_control(svm);
 	nested_vmcb02_prepare_save(svm);
 
-	ret = nested_svm_load_cr3(&svm->vcpu, svm->nested.save.cr3,
+	ret = nested_svm_load_cr3(vcpu, svm->nested.save.cr3,
 				  nested_npt_enabled(svm), from_vmrun);
 	if (ret)
 		return ret;
@@ -1116,6 +1122,8 @@ int nested_svm_vmrun(struct kvm_vcpu *vcpu)
 	int ret;
 	u64 vmcb12_gpa;
 	struct vmcb *vmcb01 = svm->vmcb01.ptr;
+
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
 
 	if (!svm->nested.hsave_msr) {
 		kvm_inject_gp(vcpu, 0);
@@ -1320,6 +1328,8 @@ void nested_svm_vmexit(struct vcpu_svm *svm)
 	struct vmcb *vmcb01 = svm->vmcb01.ptr;
 	struct vmcb *vmcb02 = svm->nested.vmcb02.ptr;
 
+	lockdep_assert_held(&vcpu->kvm->srcu); /* vcpu == &svm->vcpu */
+
 	if (nested_svm_vmexit_update_vmcb12(vcpu))
 		kvm_make_request(KVM_REQ_TRIPLE_FAULT, vcpu);
 
@@ -1467,14 +1477,17 @@ void nested_svm_vmexit(struct vcpu_svm *svm)
 }
 
 static void nested_svm_triple_fault(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
+
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
 
 	if (!vmcb12_is_intercept(&svm->nested.ctl, INTERCEPT_SHUTDOWN))
 		return;
 
 	kvm_clear_request(KVM_REQ_TRIPLE_FAULT, vcpu);
-	nested_svm_simple_vmexit(to_svm(vcpu), SVM_EXIT_SHUTDOWN);
+	nested_svm_simple_vmexit(svm, SVM_EXIT_SHUTDOWN);
 }
 
 int svm_allocate_nested(struct vcpu_svm *svm)
@@ -1562,6 +1575,7 @@ void svm_leave_nested(struct kvm_vcpu *vcpu)
 }
 
 static int nested_svm_exit_handled_msr(struct vcpu_svm *svm)
+	__must_hold_shared(&svm->vcpu.kvm->srcu)
 {
 	gpa_t base = svm->nested.ctl.msrpm_base_pa;
 	int write, bit_nr;
@@ -1587,6 +1601,7 @@ static int nested_svm_exit_handled_msr(struct vcpu_svm *svm)
 }
 
 static int nested_svm_intercept_ioio(struct vcpu_svm *svm)
+	__must_hold_shared(&svm->vcpu.kvm->srcu)
 {
 	unsigned port, size, iopm_len;
 	u16 val, mask;
@@ -1612,6 +1627,7 @@ static int nested_svm_intercept_ioio(struct vcpu_svm *svm)
 }
 
 static int nested_svm_intercept(struct vcpu_svm *svm)
+	__must_hold_shared(&svm->vcpu.kvm->srcu)
 {
 	u64 exit_code = svm->vmcb->control.exit_code;
 	int vmexit = NESTED_EXIT_HOST;
@@ -1679,10 +1695,13 @@ static bool nested_svm_is_exception_vmexit(struct kvm_vcpu *vcpu, u8 vector,
 }
 
 static void nested_svm_inject_exception_vmexit(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct kvm_queued_exception *ex = &vcpu->arch.exception_vmexit;
 	struct vcpu_svm *svm = to_svm(vcpu);
 	struct vmcb *vmcb = svm->vmcb;
+
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
 
 	vmcb->control.exit_code = SVM_EXIT_EXCP_BASE + ex->vector;
 
@@ -1719,9 +1738,12 @@ static inline bool nested_exit_on_init(struct vcpu_svm *svm)
 }
 
 static int svm_check_nested_events(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct kvm_lapic *apic = vcpu->arch.apic;
 	struct vcpu_svm *svm = to_svm(vcpu);
+
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
 	/*
 	 * Only a pending nested run blocks a pending exception.  If there is a
 	 * previously injected event, the pending exception occurred while said
@@ -1946,6 +1968,7 @@ out:
 static int svm_set_nested_state(struct kvm_vcpu *vcpu,
 				struct kvm_nested_state __user *user_kvm_nested_state,
 				struct kvm_nested_state *kvm_state)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	struct vmcb __user *user_vmcb = (struct vmcb __user *)
@@ -2086,7 +2109,7 @@ static int svm_set_nested_state(struct kvm_vcpu *vcpu,
 	 * thus MMU might not be initialized correctly.
 	 * Set it again to fix this.
 	 */
-	ret = nested_svm_load_cr3(&svm->vcpu, vcpu->arch.cr3,
+	ret = nested_svm_load_cr3(vcpu, vcpu->arch.cr3,
 				  nested_npt_enabled(svm), false);
 	if (ret)
 		goto out_free;
@@ -2105,6 +2128,7 @@ out_free:
 }
 
 static bool svm_get_nested_state_pages(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (WARN_ON(!is_guest_mode(vcpu)))
 		return true;

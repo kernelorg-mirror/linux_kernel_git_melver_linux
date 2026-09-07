@@ -74,7 +74,8 @@ fastpath_t handle_fastpath_wrmsr(struct kvm_vcpu *vcpu);
 fastpath_t handle_fastpath_wrmsr_imm(struct kvm_vcpu *vcpu, u32 msr, int reg);
 
 int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr);
-int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr);
+int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 int kvm_add_user_return_msr(u32 msr);
 int kvm_find_user_return_msr(u32 msr);

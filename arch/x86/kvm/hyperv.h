@@ -197,7 +197,8 @@ static inline u32 kvm_hv_get_vpindex(struct kvm_vcpu *vcpu)
 	return hv_vcpu ? hv_vcpu->vp_index : vcpu->vcpu_idx;
 }
 
-int kvm_hv_set_msr_common(struct kvm_vcpu *vcpu, u32 msr, u64 data, bool host);
+int kvm_hv_set_msr_common(struct kvm_vcpu *vcpu, u32 msr, u64 data, bool host)
+	__must_hold_shared(&vcpu->kvm->srcu);
 int kvm_hv_get_msr_common(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata, bool host);
 
 static inline bool kvm_hv_hypercall_enabled(struct kvm_vcpu *vcpu)
@@ -205,9 +206,11 @@ static inline bool kvm_hv_hypercall_enabled(struct kvm_vcpu *vcpu)
 	return vcpu->arch.hyperv_enabled && to_kvm_hv(vcpu->kvm)->hv_guest_os_id;
 }
 
-int kvm_hv_hypercall(struct kvm_vcpu *vcpu);
+int kvm_hv_hypercall(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
-void kvm_hv_irq_routing_update(struct kvm *kvm);
+void kvm_hv_irq_routing_update(struct kvm *kvm)
+	__must_hold_shared(&kvm->irq_srcu);
 int kvm_hv_synic_set_irq(struct kvm_kernel_irq_routing_entry *e, struct kvm *kvm,
 			 int irq_source_id, int level, bool line_status);
 void kvm_hv_synic_send_eoi(struct kvm_vcpu *vcpu, int vector);
@@ -227,7 +230,8 @@ static inline bool kvm_hv_synic_auto_eoi_set(struct kvm_vcpu *vcpu, int vector)
 void kvm_hv_vcpu_uninit(struct kvm_vcpu *vcpu);
 
 bool kvm_hv_assist_page_enabled(struct kvm_vcpu *vcpu);
-int kvm_hv_get_assist_page(struct kvm_vcpu *vcpu);
+int kvm_hv_get_assist_page(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 static inline struct kvm_vcpu_hv_stimer *to_hv_stimer(struct kvm_vcpu *vcpu,
 						      int timer_index)
@@ -285,7 +289,8 @@ static inline bool kvm_hv_invtsc_suppressed(struct kvm_vcpu *vcpu)
 void kvm_hv_process_stimers(struct kvm_vcpu *vcpu);
 
 void kvm_hv_setup_tsc_page(struct kvm *kvm,
-			   struct pvclock_vcpu_time_info *hv_clock);
+			   struct pvclock_vcpu_time_info *hv_clock)
+	__must_hold_shared(&kvm->srcu);
 void kvm_hv_request_tsc_page_update(struct kvm *kvm);
 
 void kvm_hv_xsaves_xsavec_maybe_warn(struct kvm_vcpu *vcpu);
@@ -352,6 +357,7 @@ static inline bool kvm_hv_is_tlb_flush_hcall(struct kvm_vcpu *vcpu)
 }
 
 static inline int kvm_hv_verify_vp_assist(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (!to_hv_vcpu(vcpu))
 		return 0;

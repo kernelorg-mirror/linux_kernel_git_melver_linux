@@ -321,7 +321,8 @@ static struct kmem_cache *kvm_alloc_emulator_cache(void)
 					  size - useroffset, NULL);
 }
 
-static int emulator_fix_hypercall(struct x86_emulate_ctxt *ctxt);
+static int emulator_fix_hypercall(struct x86_emulate_ctxt *ctxt)
+	__must_hold_shared(&emul_to_vcpu(ctxt)->kvm->srcu);
 
 /*
  * Handle a fault on a hardware virtualization (VMX or SVM) instruction.
@@ -1076,6 +1077,7 @@ static inline bool gtod_is_based_on_tsc(int mode)
 #endif
 
 static void kvm_track_tsc_matching(struct kvm_vcpu *vcpu, bool new_generation)
+	__must_hold(&vcpu->kvm->arch.tsc_write_lock)
 {
 #ifdef CONFIG_X86_64
 	struct kvm_arch *ka = &vcpu->kvm->arch;
@@ -1604,12 +1606,14 @@ static void kvm_make_mclock_inprogress_request(struct kvm *kvm)
 }
 
 static void __kvm_start_pvclock_update(struct kvm *kvm)
+	__acquires(&kvm->arch.tsc_write_lock)
 {
 	raw_spin_lock_irq(&kvm->arch.tsc_write_lock);
 	write_seqcount_begin(&kvm->arch.pvclock_sc);
 }
 
 static void kvm_start_pvclock_update(struct kvm *kvm)
+	__acquires(&kvm->arch.tsc_write_lock)
 {
 	kvm_make_mclock_inprogress_request(kvm);
 
@@ -1618,6 +1622,7 @@ static void kvm_start_pvclock_update(struct kvm *kvm)
 }
 
 static void kvm_end_pvclock_update(struct kvm *kvm)
+	__releases(&kvm->arch.tsc_write_lock)
 {
 	struct kvm_arch *ka = &kvm->arch;
 	struct kvm_vcpu *vcpu;
@@ -1716,10 +1721,13 @@ static void kvm_setup_guest_pvclock(struct pvclock_vcpu_time_info *ref_hv_clock,
 				    struct kvm_vcpu *vcpu,
 				    struct gfn_to_pfn_cache *gpc,
 				    unsigned int offset)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct pvclock_vcpu_time_info *guest_hv_clock;
 	struct pvclock_vcpu_time_info hv_clock;
 	unsigned long flags;
+
+	lockdep_assert_held(&gpc->kvm->srcu); /* gpc->kvm == vcpu->kvm */
 
 	memcpy(&hv_clock, ref_hv_clock, sizeof(hv_clock));
 
@@ -2046,6 +2054,7 @@ void kvm_service_local_tlb_flush_requests(struct kvm_vcpu *vcpu)
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_service_local_tlb_flush_requests);
 
 static void record_steal_time(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct gfn_to_hva_cache *ghc = &vcpu->arch.st.cache;
 	struct kvm_steal_time __user *st;
@@ -2613,6 +2622,7 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 }
 
 static void kvm_steal_time_set_preempted(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct gfn_to_hva_cache *ghc = &vcpu->arch.st.cache;
 	struct kvm_steal_time __user *st;
@@ -4739,6 +4749,7 @@ out:
 
 static int vcpu_mmio_write(struct kvm_vcpu *vcpu, gpa_t addr, int len,
 			   void *__v)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	const void *v = __v;
 	int handled = 0;
@@ -4762,6 +4773,7 @@ static int vcpu_mmio_write(struct kvm_vcpu *vcpu, gpa_t addr, int len,
 }
 
 static int vcpu_mmio_read(struct kvm_vcpu *vcpu, gpa_t addr, int len, void *v)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	int handled = 0;
 	int n;
@@ -4819,6 +4831,7 @@ gpa_t kvm_mmu_gva_to_gpa_system(struct kvm_vcpu *vcpu, gva_t gva,
 static int kvm_read_guest_virt_helper(gva_t addr, void *val, unsigned int bytes,
 				      struct kvm_vcpu *vcpu, u64 access,
 				      struct x86_exception *exception)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct kvm_pagewalk *gva_walk = &vcpu->arch.gva_walk;
 	void *data = val;
@@ -4851,6 +4864,7 @@ out:
 static int kvm_fetch_guest_virt(struct x86_emulate_ctxt *ctxt,
 				gva_t addr, void *val, unsigned int bytes,
 				struct x86_exception *exception)
+	__must_hold_shared(&emul_to_vcpu(ctxt)->kvm->srcu)
 {
 	struct kvm_vcpu *vcpu = emul_to_vcpu(ctxt);
 	struct kvm_pagewalk *gva_walk = &vcpu->arch.gva_walk;
@@ -4896,6 +4910,7 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_read_guest_virt);
 static int emulator_read_std(struct x86_emulate_ctxt *ctxt,
 			     gva_t addr, void *val, unsigned int bytes,
 			     struct x86_exception *exception, bool system)
+	__must_hold_shared(&emul_to_vcpu(ctxt)->kvm->srcu)
 {
 	struct kvm_vcpu *vcpu = emul_to_vcpu(ctxt);
 	u64 access = 0;
@@ -4911,6 +4926,7 @@ static int emulator_read_std(struct x86_emulate_ctxt *ctxt,
 static int kvm_write_guest_virt_helper(gva_t addr, void *val, unsigned int bytes,
 				      struct kvm_vcpu *vcpu, u64 access,
 				      struct x86_exception *exception)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct kvm_pagewalk *gva_walk = &vcpu->arch.gva_walk;
 	void *data = val;
@@ -4941,6 +4957,7 @@ out:
 static int emulator_write_std(struct x86_emulate_ctxt *ctxt, gva_t addr, void *val,
 			      unsigned int bytes, struct x86_exception *exception,
 			      bool system)
+	__must_hold_shared(&emul_to_vcpu(ctxt)->kvm->srcu)
 {
 	struct kvm_vcpu *vcpu = emul_to_vcpu(ctxt);
 	u64 access = PFERR_WRITE_MASK;
@@ -5001,6 +5018,7 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(handle_ud);
 
 static int vcpu_is_mmio_gpa(struct kvm_vcpu *vcpu, unsigned long gva,
 			    gpa_t gpa, bool write)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	/* For APIC access vmexit */
 	if ((gpa & PAGE_MASK) == APIC_DEFAULT_PHYS_BASE)
@@ -5017,6 +5035,7 @@ static int vcpu_is_mmio_gpa(struct kvm_vcpu *vcpu, unsigned long gva,
 static int vcpu_mmio_gva_to_gpa(struct kvm_vcpu *vcpu, unsigned long gva,
 				gpa_t *gpa, struct x86_exception *exception,
 				bool write)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct kvm_pagewalk *gva_walk = &vcpu->arch.gva_walk;
 	u64 access = ((kvm_x86_call(get_cpl)(vcpu) == 3) ? PFERR_USER_MASK : 0)
@@ -5054,12 +5073,14 @@ struct read_write_emulator_ops {
 
 static int emulator_read_guest(struct kvm_vcpu *vcpu, gpa_t gpa,
 			       void *val, int bytes)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	return !kvm_vcpu_read_guest(vcpu, gpa, val, bytes);
 }
 
 static int emulator_write_guest(struct kvm_vcpu *vcpu, gpa_t gpa,
 				void *val, int bytes)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	int ret;
 
@@ -5075,6 +5096,7 @@ static int emulator_read_write_onepage(unsigned long addr, void *val,
 				       struct x86_exception *exception,
 				       struct kvm_vcpu *vcpu,
 				       const struct read_write_emulator_ops *ops)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	gpa_t gpa;
 	int handled, ret;
@@ -5150,6 +5172,7 @@ static int emulator_read_write(struct x86_emulate_ctxt *ctxt,
 			void *val, unsigned int bytes,
 			struct x86_exception *exception,
 			const struct read_write_emulator_ops *ops)
+	__must_hold_shared(&emul_to_vcpu(ctxt)->kvm->srcu)
 {
 	struct kvm_vcpu *vcpu = emul_to_vcpu(ctxt);
 	int rc;
@@ -5229,6 +5252,7 @@ static int emulator_read_emulated(struct x86_emulate_ctxt *ctxt,
 				  void *val,
 				  unsigned int bytes,
 				  struct x86_exception *exception)
+	__must_hold_shared(&emul_to_vcpu(ctxt)->kvm->srcu)
 {
 	static const struct read_write_emulator_ops ops = {
 		.read_write_guest = emulator_read_guest,
@@ -5244,6 +5268,7 @@ static int emulator_write_emulated(struct x86_emulate_ctxt *ctxt,
 			    const void *val,
 			    unsigned int bytes,
 			    struct x86_exception *exception)
+	__must_hold_shared(&emul_to_vcpu(ctxt)->kvm->srcu)
 {
 	static const struct read_write_emulator_ops ops = {
 		.read_write_guest = emulator_write_guest,
@@ -5263,6 +5288,7 @@ static int emulator_cmpxchg_emulated(struct x86_emulate_ctxt *ctxt,
 				     const void *new,
 				     unsigned int bytes,
 				     struct x86_exception *exception)
+	__must_hold_shared(&emul_to_vcpu(ctxt)->kvm->srcu)
 {
 	struct kvm_vcpu *vcpu = emul_to_vcpu(ctxt);
 	u64 page_line_mask;
@@ -5343,6 +5369,7 @@ emul_write:
 static int emulator_pio_in_out(struct kvm_vcpu *vcpu, int size,
 			       unsigned short port, void *data,
 			       unsigned int count, bool in)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	unsigned i;
 	int r;
@@ -5393,6 +5420,7 @@ userspace_io:
 
 static int emulator_pio_in(struct kvm_vcpu *vcpu, int size,
       			   unsigned short port, void *val, unsigned int count)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	int r = emulator_pio_in_out(vcpu, size, port, val, count, true);
 	if (r)
@@ -5413,6 +5441,7 @@ static void complete_emulator_pio_in(struct kvm_vcpu *vcpu, void *val)
 static int emulator_pio_in_emulated(struct x86_emulate_ctxt *ctxt,
 				    int size, unsigned short port, void *val,
 				    unsigned int count)
+	__must_hold_shared(&emul_to_vcpu(ctxt)->kvm->srcu)
 {
 	struct kvm_vcpu *vcpu = emul_to_vcpu(ctxt);
 	if (vcpu->arch.pio.count) {
@@ -5433,6 +5462,7 @@ static int emulator_pio_in_emulated(struct x86_emulate_ctxt *ctxt,
 static int emulator_pio_out(struct kvm_vcpu *vcpu, int size,
 			    unsigned short port, const void *val,
 			    unsigned int count)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	trace_kvm_pio(KVM_PIO_OUT, port, size, count, val);
 	return emulator_pio_in_out(vcpu, size, port, (void *)val, count, false);
@@ -5441,6 +5471,7 @@ static int emulator_pio_out(struct kvm_vcpu *vcpu, int size,
 static int emulator_pio_out_emulated(struct x86_emulate_ctxt *ctxt,
 				     int size, unsigned short port,
 				     const void *val, unsigned int count)
+	__must_hold_shared(&emul_to_vcpu(ctxt)->kvm->srcu)
 {
 	return emulator_pio_out(emul_to_vcpu(ctxt), size, port, val, count);
 }
@@ -5533,6 +5564,7 @@ static unsigned long emulator_get_cr(struct x86_emulate_ctxt *ctxt, int cr)
 }
 
 static int emulator_set_cr(struct x86_emulate_ctxt *ctxt, int cr, ulong val)
+	__must_hold_shared(&emul_to_vcpu(ctxt)->kvm->srcu)
 {
 	struct kvm_vcpu *vcpu = emul_to_vcpu(ctxt);
 	int res = 0;
@@ -6578,6 +6610,7 @@ static int complete_fast_pio_out(struct kvm_vcpu *vcpu)
 
 static int kvm_fast_pio_out(struct kvm_vcpu *vcpu, int size,
 			    unsigned short port)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	unsigned long val = kvm_rax_read_raw(vcpu);
 	int ret = emulator_pio_out(vcpu, size, port, &val, 1);
@@ -6625,6 +6658,7 @@ static int complete_fast_pio_in(struct kvm_vcpu *vcpu)
 
 static int kvm_fast_pio_in(struct kvm_vcpu *vcpu, int size,
 			   unsigned short port)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	unsigned long val;
 	int ret;
@@ -7192,6 +7226,7 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_x86_vendor_exit);
 #ifdef CONFIG_X86_64
 static int kvm_pv_clock_pairing(struct kvm_vcpu *vcpu, gpa_t paddr,
 			        unsigned long clock_type)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct kvm_clock_pairing clock_pairing;
 	struct timespec64 ts;
@@ -7571,6 +7606,7 @@ static void kvm_inject_exception(struct kvm_vcpu *vcpu)
  */
 static int kvm_check_and_inject_events(struct kvm_vcpu *vcpu,
 				       bool *req_immediate_exit)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	bool can_inject;
 	int r;
@@ -7868,6 +7904,7 @@ out:
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(__kvm_vcpu_update_apicv);
 
 static void kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (!lapic_in_kernel(vcpu))
 		return;
@@ -8049,6 +8086,7 @@ static void kvm_vcpu_reload_apic_access_page(struct kvm_vcpu *vcpu)
  * userspace.
  */
 static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	int r;
 	bool req_int_win =
@@ -8561,6 +8599,7 @@ int kvm_arch_vcpu_runnable(struct kvm_vcpu *vcpu)
 
 /* Called within kvm->srcu read side.  */
 static inline int vcpu_block(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	bool hv_timer;
 
@@ -8629,6 +8668,7 @@ static inline int vcpu_block(struct kvm_vcpu *vcpu)
 
 /* Called within kvm->srcu read side.  */
 static int vcpu_run(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	int r;
 
@@ -9940,10 +9980,13 @@ void __user * __x86_set_memory_region(struct kvm *kvm, int id, gpa_t gpa,
 {
 	int i, r;
 	unsigned long hva, old_npages;
-	struct kvm_memslots *slots = kvm_memslots(kvm);
+	struct kvm_memslots *slots;
 	struct kvm_memory_slot *slot;
 
 	lockdep_assert_held(&kvm->slots_lock);
+	__assume_shared_ctx_lock(&kvm->srcu); /* update-side lock is held */
+
+	slots = kvm_memslots(kvm);
 
 	if (WARN_ON(id >= KVM_MEM_SLOTS_NUM))
 		return ERR_PTR_USR(-EINVAL);
@@ -10452,6 +10495,7 @@ static void kvm_del_async_pf_gfn(struct kvm_vcpu *vcpu, gfn_t gfn)
 }
 
 static inline int apf_put_user_notpresent(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	u32 reason = KVM_PV_REASON_PAGE_NOT_PRESENT;
 
@@ -10460,6 +10504,7 @@ static inline int apf_put_user_notpresent(struct kvm_vcpu *vcpu)
 }
 
 static inline int apf_put_user_ready(struct kvm_vcpu *vcpu, u32 token)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	unsigned int offset = offsetof(struct kvm_vcpu_pv_apf_data, token);
 
@@ -10468,6 +10513,7 @@ static inline int apf_put_user_ready(struct kvm_vcpu *vcpu, u32 token)
 }
 
 static inline bool apf_pageready_slot_free(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	unsigned int offset = offsetof(struct kvm_vcpu_pv_apf_data, token);
 	u32 val;
@@ -10892,9 +10938,11 @@ static void advance_sev_es_emulated_pio(struct kvm_vcpu *vcpu, unsigned count, i
 }
 
 static int kvm_sev_es_outs(struct kvm_vcpu *vcpu, unsigned int size,
-			   unsigned int port);
+			   unsigned int port)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 static int complete_sev_es_emulated_outs(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	int size = vcpu->arch.pio.size;
 	int port = vcpu->arch.pio.port;
@@ -10928,9 +10976,11 @@ static int kvm_sev_es_outs(struct kvm_vcpu *vcpu, unsigned int size,
 }
 
 static int kvm_sev_es_ins(struct kvm_vcpu *vcpu, unsigned int size,
-			  unsigned int port);
+			  unsigned int port)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 static int complete_sev_es_emulated_ins(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	unsigned count = vcpu->arch.pio.count;
 	int size = vcpu->arch.pio.size;

@@ -1222,6 +1222,7 @@ static void kvm_get_xstate_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 }
 
 static void kvm_write_wall_clock(struct kvm *kvm, gpa_t wall_clock, int sec_hi_ofs)
+	__must_hold_shared(&kvm->srcu)
 {
 	int version;
 	int r;
@@ -1264,8 +1265,11 @@ static void kvm_write_wall_clock(struct kvm *kvm, gpa_t wall_clock, int sec_hi_o
 
 static void kvm_write_system_time(struct kvm_vcpu *vcpu, gpa_t system_time,
 				  bool old_msr, bool host_initiated)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct kvm_arch *ka = &vcpu->kvm->arch;
+
+	lockdep_assert_held(&vcpu->arch.pv_time.kvm->srcu); /* vcpu->arch.pv_time.kvm == vcpu->kvm */
 
 	if (vcpu->vcpu_id == 0 && !host_initiated) {
 		if (ka->boot_vcpu_runs_old_kvmclock != old_msr)
@@ -1382,6 +1386,7 @@ static int set_msr_mce(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 }
 
 static int kvm_pv_enable_async_pf(struct kvm_vcpu *vcpu, u64 data)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	gpa_t gpa = data & ~0x3f;
 

@@ -196,6 +196,7 @@ static int kvm_enable_external_write_tracking(struct kvm *kvm)
 		return -EOPNOTSUPP;
 
 	mutex_lock(&kvm->slots_arch_lock);
+	__assume_shared_ctx_lock(&kvm->srcu); /* update-side lock is held */
 
 	/*
 	 * Check for *any* write tracking user (not just external users) under

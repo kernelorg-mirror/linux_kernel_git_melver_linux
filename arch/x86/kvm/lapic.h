@@ -148,7 +148,8 @@ int kvm_apic_set_irq(struct kvm_vcpu *vcpu, struct kvm_lapic_irq *irq,
 int kvm_apic_local_deliver(struct kvm_lapic *apic, int lvt_type);
 void kvm_apic_update_apicv(struct kvm_vcpu *vcpu);
 int kvm_alloc_apic_access_page(struct kvm *kvm);
-void kvm_inhibit_apic_access_page(struct kvm_vcpu *vcpu);
+void kvm_inhibit_apic_access_page(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 				   struct kvm_lapic_irq *irq, int *r);
@@ -179,9 +180,12 @@ void kvm_set_lapic_tscdeadline_msr(struct kvm_vcpu *vcpu, u64 data);
 void kvm_apic_write_nodecode(struct kvm_vcpu *vcpu, u32 offset);
 void kvm_apic_set_eoi_accelerated(struct kvm_vcpu *vcpu, int vector);
 
-int kvm_lapic_set_vapic_addr(struct kvm_vcpu *vcpu, gpa_t vapic_addr);
-void kvm_lapic_sync_from_vapic(struct kvm_vcpu *vcpu);
-void kvm_lapic_sync_to_vapic(struct kvm_vcpu *vcpu);
+int kvm_lapic_set_vapic_addr(struct kvm_vcpu *vcpu, gpa_t vapic_addr)
+	__must_hold_shared(&vcpu->kvm->srcu);
+void kvm_lapic_sync_from_vapic(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
+void kvm_lapic_sync_to_vapic(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 int kvm_x2apic_icr_write_fast(struct kvm_lapic *apic, u64 data);
 int kvm_x2apic_msr_write(struct kvm_vcpu *vcpu, u32 msr, u64 data);
@@ -190,7 +194,8 @@ int kvm_x2apic_msr_read(struct kvm_vcpu *vcpu, u32 msr, u64 *data);
 int kvm_hv_vapic_msr_write(struct kvm_vcpu *vcpu, u32 msr, u64 data);
 int kvm_hv_vapic_msr_read(struct kvm_vcpu *vcpu, u32 msr, u64 *data);
 
-int kvm_lapic_set_pv_eoi(struct kvm_vcpu *vcpu, u64 data, unsigned long len);
+int kvm_lapic_set_pv_eoi(struct kvm_vcpu *vcpu, u64 data, unsigned long len)
+	__must_hold_shared(&vcpu->kvm->srcu);
 void kvm_lapic_exit(void);
 
 u64 kvm_x2apic_disable_read_intercept_reg_mask(struct kvm_vcpu *vcpu);

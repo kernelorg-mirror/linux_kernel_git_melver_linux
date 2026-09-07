@@ -21,7 +21,8 @@ void __kvm_write_track_remove_gfn(struct kvm *kvm,
 				  struct kvm_memory_slot *slot, gfn_t gfn);
 
 bool kvm_gfn_is_write_tracked(struct kvm *kvm,
-			      const struct kvm_memory_slot *slot, gfn_t gfn);
+			      const struct kvm_memory_slot *slot, gfn_t gfn)
+	__must_hold_shared(&kvm->srcu);
 
 #ifdef CONFIG_KVM_EXTERNAL_WRITE_TRACKING
 int kvm_page_track_init(struct kvm *kvm);

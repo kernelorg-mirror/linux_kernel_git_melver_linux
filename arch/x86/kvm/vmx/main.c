@@ -156,6 +156,7 @@ static fastpath_t vt_vcpu_run(struct kvm_vcpu *vcpu, u64 run_flags)
 
 static int vt_handle_exit(struct kvm_vcpu *vcpu,
 			  enum exit_fastpath_completion fastpath)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (is_td_vcpu(vcpu))
 		return tdx_handle_exit(vcpu, fastpath);
@@ -174,6 +175,7 @@ static bool vt_unhandleable_emulation_required(struct kvm_vcpu *vcpu)
 }
 
 static int vt_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (unlikely(is_td_vcpu(vcpu)))
 		return tdx_set_msr(vcpu, msr_info);
@@ -233,6 +235,7 @@ static int vt_smi_allowed(struct kvm_vcpu *vcpu, bool for_injection)
 }
 
 static int vt_enter_smm(struct kvm_vcpu *vcpu, union kvm_smram *smram)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (KVM_BUG_ON(is_td_vcpu(vcpu), vcpu->kvm))
 		return 0;
@@ -241,6 +244,7 @@ static int vt_enter_smm(struct kvm_vcpu *vcpu, union kvm_smram *smram)
 }
 
 static int vt_leave_smm(struct kvm_vcpu *vcpu, const union kvm_smram *smram)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (KVM_BUG_ON(is_td_vcpu(vcpu), vcpu->kvm))
 		return 0;
@@ -722,6 +726,7 @@ static void vt_update_cr8_intercept(struct kvm_vcpu *vcpu, int tpr, int irr)
 }
 
 static void vt_set_apic_access_page_addr(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (is_td_vcpu(vcpu))
 		return;

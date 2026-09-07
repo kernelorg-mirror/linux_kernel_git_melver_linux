@@ -416,6 +416,8 @@ void kvm_scan_ioapic_routes(struct kvm_vcpu *vcpu,
 void kvm_arch_irq_routing_update(struct kvm *kvm)
 {
 #ifdef CONFIG_KVM_HYPERV
+	/* Update-side mutex kvm->irq_lock is held. */
+	__assume_shared_ctx_lock(&kvm->irq_srcu);
 	kvm_hv_irq_routing_update(kvm);
 #endif
 

@@ -1432,9 +1432,12 @@ static void svm_srso_vm_destroy(void) { }
 #endif
 
 static void svm_prepare_switch_to_guest(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	struct svm_cpu_data *sd = per_cpu_ptr(&svm_data, vcpu->cpu);
+
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
 
 	if (is_sev_es_guest(vcpu))
 		sev_es_unmap_ghcb(svm);
@@ -1533,6 +1536,7 @@ static bool svm_get_if_flag(struct kvm_vcpu *vcpu)
 }
 
 static void svm_cache_reg(struct kvm_vcpu *vcpu, enum kvm_reg reg)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	kvm_register_mark_available(vcpu, reg);
 
@@ -1972,6 +1976,7 @@ static int svm_check_emulate_instruction(struct kvm_vcpu *vcpu, int emul_type,
 					 void *insn, int insn_len);
 
 static int npf_interception(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	int rc;
@@ -2094,6 +2099,7 @@ static int icebp_interception(struct kvm_vcpu *vcpu)
 }
 
 static int ud_interception(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	return handle_ud(vcpu);
 }
@@ -2193,11 +2199,14 @@ static int shutdown_interception(struct kvm_vcpu *vcpu)
 }
 
 static int io_interception(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	u32 io_info = svm->vmcb->control.exit_info_1; /* address size bug? */
 	int size, in, string;
 	unsigned port;
+
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
 
 	++vcpu->stat.io_exits;
 	string = (io_info & SVM_IOIO_STR_MASK) != 0;
@@ -2279,6 +2288,7 @@ static int vmsave_interception(struct kvm_vcpu *vcpu)
 }
 
 static int vmrun_interception(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (nested_svm_check_permissions(vcpu))
 		return 1;
@@ -2319,10 +2329,13 @@ static u64 svm_get_decoded_instr_exit_code(struct kvm_vcpu *vcpu)
  *   2) VMware backdoor
  */
 static int gp_interception(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	u32 error_code = svm->vmcb->control.exit_info_1;
 	u64 svm_exit_code;
+
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
 
 	/* Both #GP cases have zero error_code */
 	if (error_code)
@@ -2562,10 +2575,13 @@ static int rsm_interception(struct kvm_vcpu *vcpu)
 
 static bool check_selective_cr0_intercepted(struct kvm_vcpu *vcpu,
 					    unsigned long val)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	unsigned long cr0 = vcpu->arch.cr0;
 	bool ret = false;
+
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
 
 	if (!is_guest_mode(vcpu) ||
 	    (!(vmcb12_is_intercept(&svm->nested.ctl, INTERCEPT_SELECTIVE_CR0))))
@@ -2585,6 +2601,7 @@ static bool check_selective_cr0_intercepted(struct kvm_vcpu *vcpu,
 #define CR_VALID (1ULL << 63)
 
 static int cr_interception(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	int reg, cr;
@@ -2733,6 +2750,7 @@ static int dr_interception(struct kvm_vcpu *vcpu)
 }
 
 static int cr8_write_interception(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	u8 cr8_prev = kvm_get_cr8(vcpu);
 	int r;
@@ -2750,6 +2768,7 @@ static int cr8_write_interception(struct kvm_vcpu *vcpu)
 }
 
 static int efer_trap(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct msr_data msr_info;
 	int ret;
@@ -2988,6 +3007,7 @@ static int svm_set_vm_cr(struct kvm_vcpu *vcpu, u64 data)
 }
 
 static int svm_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	int ret = 0;
@@ -3265,6 +3285,7 @@ static int pause_interception(struct kvm_vcpu *vcpu)
 }
 
 static int invpcid_interception(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	unsigned long type;
@@ -3329,6 +3350,7 @@ static int bus_lock_exit(struct kvm_vcpu *vcpu)
 }
 
 static int vmmcall_interception(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	/*
 	 * Inject a #UD if L2 is active and the VMMCALL isn't a Hyper-V TLB
@@ -3713,9 +3735,12 @@ static void svm_get_entry_info(struct kvm_vcpu *vcpu, u32 *intr_info,
 }
 
 static int svm_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	struct kvm_run *kvm_run = vcpu->run;
+
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
 
 	if (unlikely(exit_fastpath == EXIT_FASTPATH_EXIT_USERSPACE))
 		return 0;
@@ -4832,11 +4857,14 @@ static int svm_check_intercept(struct kvm_vcpu *vcpu,
 			       struct x86_instruction_info *info,
 			       enum x86_intercept_stage stage,
 			       struct x86_exception *exception)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	int vmexit, ret = X86EMUL_CONTINUE;
 	struct __x86_intercept icpt_info;
 	struct vmcb *vmcb = svm->vmcb;
+
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
 
 	if (info->intercept >= ARRAY_SIZE(x86_intercept_map))
 		goto out;
@@ -5011,8 +5039,11 @@ static int svm_smi_allowed(struct kvm_vcpu *vcpu, bool for_injection)
 }
 
 static int svm_enter_smm(struct kvm_vcpu *vcpu, union kvm_smram *smram)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
+
+	lockdep_assert_held(&svm->vcpu.kvm->srcu); /* svm->vcpu.kvm == vcpu->kvm */
 
 	if (!is_guest_mode(vcpu))
 		return 0;
@@ -5057,6 +5088,7 @@ static int svm_enter_smm(struct kvm_vcpu *vcpu, union kvm_smram *smram)
 }
 
 static int svm_leave_smm(struct kvm_vcpu *vcpu, const union kvm_smram *smram)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	struct vmcb *vmcb12;

@@ -36,9 +36,11 @@
 #include "x86.h"
 
 static int ioapic_service(struct kvm_ioapic *vioapic, int irq,
-		bool line_status);
+		bool line_status)
+	__must_hold(&vioapic->lock);
 
 static unsigned long ioapic_read_indirect(struct kvm_ioapic *ioapic)
+	__must_hold(&ioapic->lock)
 {
 	unsigned long result = 0;
 
@@ -76,20 +78,24 @@ static unsigned long ioapic_read_indirect(struct kvm_ioapic *ioapic)
 }
 
 static void rtc_irq_eoi_tracking_reset(struct kvm_ioapic *ioapic)
+	__must_hold(&ioapic->lock)
 {
 	ioapic->rtc_status.pending_eoi = 0;
 	bitmap_zero(ioapic->rtc_status.map, KVM_MAX_VCPU_IDS);
 }
 
-static void kvm_rtc_eoi_tracking_restore_all(struct kvm_ioapic *ioapic);
+static void kvm_rtc_eoi_tracking_restore_all(struct kvm_ioapic *ioapic)
+	__must_hold(&ioapic->lock);
 
 static void rtc_status_pending_eoi_check_valid(struct kvm_ioapic *ioapic)
+	__must_hold(&ioapic->lock)
 {
 	if (WARN_ON_ONCE(ioapic->rtc_status.pending_eoi < 0))
 		kvm_rtc_eoi_tracking_restore_all(ioapic);
 }
 
 static void __rtc_irq_eoi_tracking_restore_one(struct kvm_vcpu *vcpu)
+	__must_hold(&vcpu->kvm->arch.vioapic->lock)
 {
 	bool new_val, old_val;
 	struct kvm_ioapic *ioapic = vcpu->kvm->arch.vioapic;
@@ -137,12 +143,15 @@ static void kvm_rtc_eoi_tracking_restore_all(struct kvm_ioapic *ioapic)
 		return;
 
 	rtc_irq_eoi_tracking_reset(ioapic);
-	kvm_for_each_vcpu(i, vcpu, ioapic->kvm)
-	    __rtc_irq_eoi_tracking_restore_one(vcpu);
+	kvm_for_each_vcpu(i, vcpu, ioapic->kvm) {
+		lockdep_assert_held(&vcpu->kvm->arch.vioapic->lock); /* vcpu->kvm->arch.vioapic == ioapic */
+		__rtc_irq_eoi_tracking_restore_one(vcpu);
+	}
 }
 
 static void rtc_irq_eoi(struct kvm_ioapic *ioapic, struct kvm_vcpu *vcpu,
 			int vector)
+	__must_hold(&ioapic->lock)
 {
 	struct rtc_status *status = &ioapic->rtc_status;
 
@@ -156,6 +165,7 @@ static void rtc_irq_eoi(struct kvm_ioapic *ioapic, struct kvm_vcpu *vcpu,
 }
 
 static bool rtc_irq_check_coalesced(struct kvm_ioapic *ioapic)
+	__must_hold(&ioapic->lock)
 {
 	if (ioapic->rtc_status.pending_eoi > 0)
 		return true; /* coalesced */
@@ -164,6 +174,7 @@ static bool rtc_irq_check_coalesced(struct kvm_ioapic *ioapic)
 }
 
 static void ioapic_lazy_update_eoi(struct kvm_ioapic *ioapic, int irq)
+	__must_hold(&ioapic->lock)
 {
 	unsigned long i;
 	struct kvm_vcpu *vcpu;
@@ -187,6 +198,7 @@ static void ioapic_lazy_update_eoi(struct kvm_ioapic *ioapic, int irq)
 
 static int ioapic_set_irq(struct kvm_ioapic *ioapic, unsigned int irq,
 		int irq_level, bool line_status)
+	__must_hold(&ioapic->lock)
 {
 	union kvm_ioapic_redirect_entry entry;
 	u32 mask = 1 << irq;
@@ -246,6 +258,7 @@ out:
 }
 
 static void kvm_ioapic_inject_all(struct kvm_ioapic *ioapic, unsigned long irr)
+	__must_hold(&ioapic->lock)
 {
 	u32 idx;
 
@@ -330,6 +343,7 @@ void kvm_fire_mask_notifiers(struct kvm *kvm, unsigned irqchip, unsigned pin,
 }
 
 static void ioapic_write_indirect(struct kvm_ioapic *ioapic, u32 val)
+	__must_hold(&ioapic->lock)
 {
 	unsigned index;
 	bool mask_before, mask_after;
@@ -541,6 +555,7 @@ static void kvm_ioapic_update_eoi_one(struct kvm_vcpu *vcpu,
 				      struct kvm_ioapic *ioapic,
 				      int trigger_mode,
 				      int pin)
+	__must_hold(&ioapic->lock)
 {
 	struct kvm_lapic *apic = vcpu->arch.apic;
 	union kvm_ioapic_redirect_entry *ent = &ioapic->redirtbl[pin];
@@ -695,6 +710,7 @@ static int ioapic_mmio_write(struct kvm_vcpu *vcpu, struct kvm_io_device *this,
 }
 
 static void kvm_ioapic_reset(struct kvm_ioapic *ioapic)
+	__must_hold(&ioapic->lock)
 {
 	int i;
 

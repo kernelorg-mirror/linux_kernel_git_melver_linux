@@ -5429,6 +5429,7 @@ handle_pf:
 }
 
 static int handle_exception_nmi(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	struct kvm_run *kvm_run = vcpu->run;
@@ -5589,6 +5590,7 @@ static int handle_triple_fault(struct kvm_vcpu *vcpu)
 }
 
 static int handle_io(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	unsigned long exit_qualification;
 	int size, in, string;
@@ -5621,6 +5623,7 @@ void vmx_patch_hypercall(struct kvm_vcpu *vcpu, unsigned char *hypercall)
 
 /* called to set cr0 as appropriate for a mov-to-cr0 exit. */
 static int handle_set_cr0(struct kvm_vcpu *vcpu, unsigned long val)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (is_guest_mode(vcpu)) {
 		struct vmcs12 *vmcs12 = get_vmcs12(vcpu);
@@ -5647,6 +5650,7 @@ static int handle_set_cr0(struct kvm_vcpu *vcpu, unsigned long val)
 }
 
 static int handle_set_cr4(struct kvm_vcpu *vcpu, unsigned long val)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (is_guest_mode(vcpu)) {
 		struct vmcs12 *vmcs12 = get_vmcs12(vcpu);
@@ -5676,6 +5680,7 @@ static int handle_desc(struct kvm_vcpu *vcpu)
 }
 
 static int handle_cr(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	unsigned long exit_qualification, val;
 	int cr;
@@ -6003,6 +6008,7 @@ static int handle_ept_violation(struct kvm_vcpu *vcpu)
 }
 
 static int handle_ept_misconfig(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	gpa_t gpa;
 
@@ -6140,6 +6146,7 @@ static int handle_monitor_trap(struct kvm_vcpu *vcpu)
 }
 
 static int handle_invpcid(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	u32 vmx_instruction_info;
 	unsigned long type;
@@ -6427,6 +6434,7 @@ static void vmx_destroy_pml_buffer(struct vcpu_vmx *vmx)
 }
 
 static void vmx_flush_pml_buffer(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	u16 pml_idx, pml_tail_index;
@@ -6466,6 +6474,7 @@ static void vmx_flush_pml_buffer(struct kvm_vcpu *vcpu)
 }
 
 static void nested_vmx_mark_all_vmcs12_pages_dirty(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 
@@ -6706,6 +6715,7 @@ void dump_vmcs(struct kvm_vcpu *vcpu)
  * assistance.
  */
 static int __vmx_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	union vmx_exit_reason exit_reason = vmx_get_exit_reason(vcpu);
@@ -8144,6 +8154,7 @@ static __init void vmx_set_cpu_caps(void)
 static bool vmx_is_io_intercepted(struct kvm_vcpu *vcpu,
 				  struct x86_instruction_info *info,
 				  unsigned long *exit_qualification)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vmcs12 *vmcs12 = get_vmcs12(vcpu);
 	unsigned short port;

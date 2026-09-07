@@ -268,6 +268,8 @@ static int synic_set_msr(struct kvm_vcpu_hv_synic *synic,
 	struct kvm_vcpu *vcpu = hv_synic_to_vcpu(synic);
 	int ret;
 
+	lockdep_assert_held(&vcpu->kvm->srcu);
+
 	if (!synic->active && (!host || data))
 		return 1;
 
@@ -780,6 +782,8 @@ static int synic_deliver_msg(struct kvm_vcpu_hv_synic *synic, u32 sint,
 	struct hv_message_header hv_hdr;
 	int r;
 
+	lockdep_assert_held(&vcpu->kvm->srcu);
+
 	if (!(synic->msg_page & HV_SYNIC_SIMP_ENABLE))
 		return -ENOENT;
 
@@ -1056,6 +1060,7 @@ static bool kvm_hv_msr_partition_wide(u32 msr)
 }
 
 static int kvm_hv_msr_get_crash_data(struct kvm *kvm, u32 index, u64 *pdata)
+	__must_hold(&to_kvm_hv(kvm)->hv_lock)
 {
 	struct kvm_hv *hv = to_kvm_hv(kvm);
 	size_t size = ARRAY_SIZE(hv->hv_crash_param);
@@ -1068,6 +1073,7 @@ static int kvm_hv_msr_get_crash_data(struct kvm *kvm, u32 index, u64 *pdata)
 }
 
 static int kvm_hv_msr_get_crash_ctl(struct kvm *kvm, u64 *pdata)
+	__must_hold(&to_kvm_hv(kvm)->hv_lock)
 {
 	struct kvm_hv *hv = to_kvm_hv(kvm);
 
@@ -1076,6 +1082,7 @@ static int kvm_hv_msr_get_crash_ctl(struct kvm *kvm, u64 *pdata)
 }
 
 static int kvm_hv_msr_set_crash_ctl(struct kvm *kvm, u64 data)
+	__must_hold(&to_kvm_hv(kvm)->hv_lock)
 {
 	struct kvm_hv *hv = to_kvm_hv(kvm);
 
@@ -1085,6 +1092,7 @@ static int kvm_hv_msr_set_crash_ctl(struct kvm *kvm, u64 data)
 }
 
 static int kvm_hv_msr_set_crash_data(struct kvm *kvm, u32 index, u64 data)
+	__must_hold(&to_kvm_hv(kvm)->hv_lock)
 {
 	struct kvm_hv *hv = to_kvm_hv(kvm);
 	size_t size = ARRAY_SIZE(hv->hv_crash_param);
@@ -1175,6 +1183,7 @@ static bool compute_tsc_page_parameters(struct pvclock_vcpu_time_info *hv_clock,
  * TSC scaling is unsupported).
  */
 static inline bool tsc_page_update_unsafe(struct kvm_hv *hv)
+	__must_hold(&hv->hv_lock)
 {
 	return (hv->hv_tsc_page_status != HV_TSC_PAGE_GUEST_CHANGED) &&
 		hv->hv_tsc_emulation_control;
@@ -1397,6 +1406,8 @@ void kvm_hv_xsaves_xsavec_maybe_warn(struct kvm_vcpu *vcpu)
 
 static int kvm_hv_set_msr_pw(struct kvm_vcpu *vcpu, u32 msr, u64 data,
 			     bool host)
+	__must_hold(&to_kvm_hv(vcpu->kvm)->hv_lock)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct kvm *kvm = vcpu->kvm;
 	struct kvm_hv *hv = to_kvm_hv(kvm);
@@ -1539,6 +1550,7 @@ static u64 current_task_runtime_100ns(void)
 }
 
 static int kvm_hv_set_msr(struct kvm_vcpu *vcpu, u32 msr, u64 data, bool host)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct kvm_vcpu_hv *hv_vcpu = to_hv_vcpu(vcpu);
 
@@ -1652,6 +1664,7 @@ static int kvm_hv_set_msr(struct kvm_vcpu *vcpu, u32 msr, u64 data, bool host)
 
 static int kvm_hv_get_msr_pw(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata,
 			     bool host)
+	__must_hold(&to_kvm_hv(vcpu->kvm)->hv_lock)
 {
 	u64 data = 0;
 	struct kvm *kvm = vcpu->kvm;
@@ -1910,6 +1923,7 @@ struct kvm_hv_hcall {
 
 static int kvm_hv_get_hc_data(struct kvm *kvm, struct kvm_hv_hcall *hc,
 			      u16 orig_cnt, u16 cnt_cap, u64 *data)
+	__must_hold_shared(&kvm->srcu)
 {
 	/*
 	 * Preserve the original count when ignoring entries via a "cap", KVM
@@ -1943,6 +1957,7 @@ static int kvm_hv_get_hc_data(struct kvm *kvm, struct kvm_hv_hcall *hc,
 
 static u64 kvm_get_sparse_vp_set(struct kvm *kvm, struct kvm_hv_hcall *hc,
 				 u64 *sparse_banks)
+	__must_hold_shared(&kvm->srcu)
 {
 	if (hc->var_cnt > HV_MAX_SPARSE_VCPU_BANKS)
 		return -EINVAL;
@@ -1953,6 +1968,7 @@ static u64 kvm_get_sparse_vp_set(struct kvm *kvm, struct kvm_hv_hcall *hc,
 }
 
 static int kvm_hv_get_tlb_flush_entries(struct kvm *kvm, struct kvm_hv_hcall *hc, u64 entries[])
+	__must_hold_shared(&kvm->srcu)
 {
 	return kvm_hv_get_hc_data(kvm, hc, hc->rep_cnt, hc->rep_cnt, entries);
 }
@@ -2034,6 +2050,7 @@ out_flush_all:
 }
 
 static u64 kvm_hv_flush_tlb(struct kvm_vcpu *vcpu, struct kvm_hv_hcall *hc)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct kvm_vcpu_hv *hv_vcpu = to_hv_vcpu(vcpu);
 	unsigned long *vcpu_mask = hv_vcpu->vcpu_mask;
@@ -2243,6 +2260,7 @@ static void kvm_hv_send_ipi_to_many(struct kvm *kvm, u32 vector,
 }
 
 static u64 kvm_hv_send_ipi(struct kvm_vcpu *vcpu, struct kvm_hv_hcall *hc)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct kvm_vcpu_hv *hv_vcpu = to_hv_vcpu(vcpu);
 	u64 *sparse_banks = hv_vcpu->sparse_banks;
@@ -2405,6 +2423,7 @@ static void kvm_hv_hypercall_set_result(struct kvm_vcpu *vcpu, u64 result)
 }
 
 static int kvm_hv_hypercall_complete(struct kvm_vcpu *vcpu, u64 result)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	u32 tlb_lock_count = 0;
 	int ret;
@@ -2428,11 +2447,13 @@ static int kvm_hv_hypercall_complete(struct kvm_vcpu *vcpu, u64 result)
 }
 
 static int kvm_hv_hypercall_complete_userspace(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	return kvm_hv_hypercall_complete(vcpu, vcpu->run->hyperv.u.hcall.result);
 }
 
 static u16 kvm_hvcall_signal_event(struct kvm_vcpu *vcpu, struct kvm_hv_hcall *hc)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct kvm_hv *hv = to_kvm_hv(vcpu->kvm);
 	struct eventfd_ctx *eventfd;

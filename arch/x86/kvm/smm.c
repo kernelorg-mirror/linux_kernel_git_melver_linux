@@ -418,6 +418,7 @@ static int rsm_load_seg_64(struct kvm_vcpu *vcpu,
 
 static int rsm_enter_protected_mode(struct kvm_vcpu *vcpu,
 				    u64 cr0, u64 cr3, u64 cr4)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	int bad;
 	u64 pcid;
@@ -463,6 +464,7 @@ static int rsm_enter_protected_mode(struct kvm_vcpu *vcpu,
 
 static int rsm_load_state_32(struct x86_emulate_ctxt *ctxt,
 			     const struct kvm_smram_state_32 *smstate)
+	__must_hold_shared(&((struct kvm_vcpu *)ctxt->vcpu)->kvm->srcu)
 {
 	struct kvm_vcpu *vcpu = ctxt->vcpu;
 	struct desc_ptr dt;
@@ -515,6 +517,7 @@ static int rsm_load_state_32(struct x86_emulate_ctxt *ctxt,
 #ifdef CONFIG_X86_64
 static int rsm_load_state_64(struct x86_emulate_ctxt *ctxt,
 			     const struct kvm_smram_state_64 *smstate)
+	__must_hold_shared(&((struct kvm_vcpu *)ctxt->vcpu)->kvm->srcu)
 {
 	struct kvm_vcpu *vcpu = ctxt->vcpu;
 	struct desc_ptr dt;
@@ -577,6 +580,9 @@ int emulator_leave_smm(struct x86_emulate_ctxt *ctxt)
 	union kvm_smram smram;
 	u64 smbase;
 	int ret;
+
+	/* Called via struct x86_emulate_ops callback; assert SRCU dynamically. */
+	lockdep_assert_held(&vcpu->kvm->srcu);
 
 	smbase = vcpu->arch.smbase;
 

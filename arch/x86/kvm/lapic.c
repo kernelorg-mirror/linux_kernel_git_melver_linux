@@ -901,6 +901,7 @@ int kvm_pv_send_ipi(struct kvm *kvm, unsigned long ipi_bitmap_low,
 }
 
 static int pv_eoi_put_user(struct kvm_vcpu *vcpu, u8 val)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 
 	return kvm_write_guest_cached(vcpu->kvm, &vcpu->arch.pv_eoi.data, &val,
@@ -908,6 +909,7 @@ static int pv_eoi_put_user(struct kvm_vcpu *vcpu, u8 val)
 }
 
 static int pv_eoi_get_user(struct kvm_vcpu *vcpu, u8 *val)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 
 	return kvm_read_guest_cached(vcpu->kvm, &vcpu->arch.pv_eoi.data, val,
@@ -920,6 +922,7 @@ static inline bool pv_eoi_enabled(struct kvm_vcpu *vcpu)
 }
 
 static void pv_eoi_set_pending(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (pv_eoi_put_user(vcpu, KVM_PV_EOI_ENABLED) < 0)
 		return;
@@ -928,6 +931,7 @@ static void pv_eoi_set_pending(struct kvm_vcpu *vcpu)
 }
 
 static bool pv_eoi_test_and_clr_pending(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	u8 val;
 
@@ -3378,6 +3382,7 @@ void __kvm_migrate_apic_timer(struct kvm_vcpu *vcpu)
  */
 static void apic_sync_pv_eoi_from_guest(struct kvm_vcpu *vcpu,
 					struct kvm_lapic *apic)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	int vector;
 
@@ -3428,6 +3433,7 @@ void kvm_lapic_sync_from_vapic(struct kvm_vcpu *vcpu)
  */
 static void apic_sync_pv_eoi_to_guest(struct kvm_vcpu *vcpu,
 					struct kvm_lapic *apic)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (!pv_eoi_enabled(vcpu) ||
 	    /* IRR set or many bits in ISR: could be nested. */
@@ -3443,7 +3449,7 @@ static void apic_sync_pv_eoi_to_guest(struct kvm_vcpu *vcpu,
 		return;
 	}
 
-	pv_eoi_set_pending(apic->vcpu);
+	pv_eoi_set_pending(vcpu);
 }
 
 void kvm_lapic_sync_to_vapic(struct kvm_vcpu *vcpu)

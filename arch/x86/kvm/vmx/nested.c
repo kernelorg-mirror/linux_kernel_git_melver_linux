@@ -250,6 +250,7 @@ static inline void nested_release_evmcs(struct kvm_vcpu *vcpu)
 }
 
 static bool nested_evmcs_handle_vmclear(struct kvm_vcpu *vcpu, gpa_t vmptr)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 #ifdef CONFIG_KVM_HYPERV
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -386,7 +387,8 @@ static void free_nested(struct kvm_vcpu *vcpu)
 void nested_vmx_free_vcpu(struct kvm_vcpu *vcpu)
 {
 	vcpu_load(vcpu);
-	vmx_leave_nested(vcpu);
+	/* VM is being destroyed; vcpu->kvm->srcu is not held. */
+	context_unsafe(vmx_leave_nested(vcpu));
 	vcpu_put(vcpu);
 }
 
@@ -421,6 +423,7 @@ static void nested_ept_invalidate_addr(struct kvm_vcpu *vcpu, gpa_t eptp,
 static void nested_ept_inject_page_fault(struct kvm_vcpu *vcpu,
 					 struct x86_exception *fault,
 					 bool from_hardware)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vmcs12 *vmcs12 = get_vmcs12(vcpu);
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -587,6 +590,7 @@ static int nested_vmx_check_msr_bitmap_controls(struct kvm_vcpu *vcpu,
 
 static int nested_vmx_check_tpr_shadow_controls(struct kvm_vcpu *vcpu,
 						struct vmcs12 *vmcs12)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	gpa_t vtpr_gpa = vmcs12->virtual_apic_page_addr + APIC_TASKPRI;
 	u32 vtpr;
@@ -850,6 +854,7 @@ static inline bool nested_vmx_prepare_msr_bitmap(struct kvm_vcpu *vcpu,
 
 static void nested_cache_shadow_vmcs12(struct kvm_vcpu *vcpu,
 				       struct vmcs12 *vmcs12)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	struct gfn_to_hva_cache *ghc = &vmx->nested.shadow_vmcs12_cache;
@@ -869,6 +874,7 @@ static void nested_cache_shadow_vmcs12(struct kvm_vcpu *vcpu,
 
 static void nested_flush_cached_shadow_vmcs12(struct kvm_vcpu *vcpu,
 					      struct vmcs12 *vmcs12)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	struct gfn_to_hva_cache *ghc = &vmx->nested.shadow_vmcs12_cache;
@@ -1095,6 +1101,7 @@ static int nested_vmx_store_msr_check(struct kvm_vcpu *vcpu,
  * for a capacity violation.
  */
 static u32 nested_vmx_load_msr(struct kvm_vcpu *vcpu, u64 gpa, u32 count)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	u32 i;
 	struct vmx_msr_entry e;
@@ -1159,6 +1166,7 @@ static bool nested_vmx_get_vmexit_msr_value(struct kvm_vcpu *vcpu,
 
 static bool read_and_check_msr_entry(struct kvm_vcpu *vcpu, u64 gpa, int i,
 				     struct vmx_msr_entry *e)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (kvm_vcpu_read_guest(vcpu,
 				gpa + i * sizeof(*e),
@@ -1178,6 +1186,7 @@ static bool read_and_check_msr_entry(struct kvm_vcpu *vcpu, u64 gpa, int i,
 }
 
 static int nested_vmx_store_msr(struct kvm_vcpu *vcpu, u64 gpa, u32 count)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	u64 data;
 	u32 i;
@@ -1208,6 +1217,7 @@ static int nested_vmx_store_msr(struct kvm_vcpu *vcpu, u64 gpa, u32 count)
 }
 
 static bool nested_msr_store_list_has_msr(struct kvm_vcpu *vcpu, u32 msr_index)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vmcs12 *vmcs12 = get_vmcs12(vcpu);
 	u32 count = vmcs12->vm_exit_msr_store_count;
@@ -1234,6 +1244,7 @@ static bool nested_msr_store_list_has_msr(struct kvm_vcpu *vcpu, u32 msr_index)
 static int nested_vmx_load_cr3(struct kvm_vcpu *vcpu, unsigned long cr3,
 			       bool nested_ept, bool reload_pdptrs,
 			       enum vm_entry_failure_code *entry_failure_code)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (CC(!kvm_vcpu_is_legal_cr3(vcpu, cr3))) {
 		*entry_failure_code = ENTRY_FAIL_DEFAULT;
@@ -2183,6 +2194,7 @@ static void copy_vmcs12_to_enlightened(struct vcpu_vmx *vmx)
  */
 static enum nested_evmptrld_status nested_vmx_handle_enlightened_vmptrld(
 	struct kvm_vcpu *vcpu, bool from_launch)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 #ifdef CONFIG_KVM_HYPERV
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -2622,6 +2634,7 @@ static void vmcs_write_cet_state(struct kvm_vcpu *vcpu, u64 s_cet,
 }
 
 static void prepare_vmcs02_rare(struct vcpu_vmx *vmx, struct vmcs12 *vmcs12)
+	__must_hold_shared(&vmx->vcpu.kvm->srcu)
 {
 	struct hv_enlightened_vmcs *hv_evmcs = nested_vmx_evmcs(vmx);
 
@@ -2760,10 +2773,13 @@ static void prepare_vmcs02_rare(struct vcpu_vmx *vmx, struct vmcs12 *vmcs12)
 static int prepare_vmcs02(struct kvm_vcpu *vcpu, struct vmcs12 *vmcs12,
 			  bool from_vmentry,
 			  enum vm_entry_failure_code *entry_failure_code)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	struct hv_enlightened_vmcs *evmcs = nested_vmx_evmcs(vmx);
 	bool load_guest_pdptrs_vmcs12 = false;
+
+	lockdep_assert_held(&vmx->vcpu.kvm->srcu); /* vmx->vcpu.kvm == vcpu->kvm */
 
 	if (vmx->nested.dirty_vmcs12 || nested_vmx_is_evmptr12_valid(vmx)) {
 		prepare_vmcs02_rare(vmx, vmcs12);
@@ -2968,6 +2984,7 @@ static bool nested_vmx_check_eptp(struct kvm_vcpu *vcpu, u64 new_eptp)
  */
 static int nested_check_vm_execution_controls(struct kvm_vcpu *vcpu,
                                               struct vmcs12 *vmcs12)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 
@@ -3126,6 +3143,7 @@ static int nested_check_vm_entry_controls(struct kvm_vcpu *vcpu,
 
 static int nested_vmx_check_controls(struct kvm_vcpu *vcpu,
 				     struct vmcs12 *vmcs12)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	if (nested_check_vm_execution_controls(vcpu, vmcs12) ||
 	    nested_check_vm_exit_controls(vcpu, vmcs12) ||
@@ -3267,6 +3285,7 @@ static int nested_vmx_check_host_state(struct kvm_vcpu *vcpu,
 
 static int nested_vmx_check_vmcs_link_ptr(struct kvm_vcpu *vcpu,
 					  struct vmcs12 *vmcs12)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	struct gfn_to_hva_cache *ghc = &vmx->nested.shadow_vmcs12_cache;
@@ -3311,6 +3330,7 @@ static int nested_check_guest_non_reg_state(struct vmcs12 *vmcs12)
 static int nested_vmx_check_guest_state(struct kvm_vcpu *vcpu,
 					struct vmcs12 *vmcs12,
 					enum vm_entry_failure_code *entry_failure_code)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	bool ia32e = !!(vmcs12->vm_entry_controls & VM_ENTRY_IA32E_MODE);
 
@@ -3411,6 +3431,7 @@ static int nested_vmx_check_guest_state(struct kvm_vcpu *vcpu,
 
 #ifdef CONFIG_KVM_HYPERV
 static bool nested_get_evmcs_page(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 
@@ -3440,6 +3461,7 @@ static bool nested_get_evmcs_page(struct kvm_vcpu *vcpu)
 #endif
 
 static bool nested_get_vmcs12_pages(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vmcs12 *vmcs12 = get_vmcs12(vcpu);
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -3528,6 +3550,7 @@ static bool nested_get_vmcs12_pages(struct kvm_vcpu *vcpu)
 }
 
 static bool vmx_get_nested_state_pages(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 #ifdef CONFIG_KVM_HYPERV
 	/*
@@ -3555,6 +3578,7 @@ static bool vmx_get_nested_state_pages(struct kvm_vcpu *vcpu)
 }
 
 static int nested_vmx_write_pml_buffer(struct kvm_vcpu *vcpu, gpa_t gpa)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vmcs12 *vmcs12;
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -3790,6 +3814,7 @@ vmentry_fail_vmexit:
  * for running an L2 nested guest.
  */
 static int nested_vmx_run(struct kvm_vcpu *vcpu, bool launch)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vmcs12 *vmcs12;
 	enum nvmx_vmentry_status status;
@@ -4027,6 +4052,7 @@ static void vmcs12_save_pending_event(struct kvm_vcpu *vcpu,
 }
 
 static int vmx_complete_nested_posted_interrupt(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	int max_irr;
@@ -4070,6 +4096,7 @@ mmio_needed:
 }
 
 static void nested_vmx_inject_exception_vmexit(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct kvm_queued_exception *ex = &vcpu->arch.exception_vmexit;
 	u32 intr_info = ex->vector | INTR_INFO_VALID_MASK;
@@ -4303,6 +4330,7 @@ static bool vmx_has_nested_events(struct kvm_vcpu *vcpu, bool for_injection)
  *     priority over external interrupts and lower priority events.
  */
 static int vmx_check_nested_events(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct kvm_lapic *apic = vcpu->arch.apic;
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -4744,6 +4772,7 @@ static void sync_vmcs02_to_vmcs12(struct kvm_vcpu *vcpu, struct vmcs12 *vmcs12)
 static void prepare_vmcs12(struct kvm_vcpu *vcpu, struct vmcs12 *vmcs12,
 			   u32 vm_exit_reason, u32 exit_intr_info,
 			   unsigned long exit_qualification, u32 exit_insn_len)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	/* update exit information fields: */
 	vmcs12->vm_exit_reason = vm_exit_reason;
@@ -4799,6 +4828,7 @@ static void prepare_vmcs12(struct kvm_vcpu *vcpu, struct vmcs12 *vmcs12,
  */
 static void load_vmcs12_host_state(struct kvm_vcpu *vcpu,
 				   struct vmcs12 *vmcs12)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	enum vm_entry_failure_code ignored;
 	struct kvm_segment seg;
@@ -4958,6 +4988,7 @@ static inline u64 nested_vmx_get_vmcs01_guest_efer(struct vcpu_vmx *vmx)
 }
 
 static void nested_vmx_restore_host_state(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vmcs12 *vmcs12 = get_vmcs12(vcpu);
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -5230,6 +5261,7 @@ void __nested_vmx_vmexit(struct kvm_vcpu *vcpu, u32 vm_exit_reason,
 }
 
 static void nested_vmx_triple_fault(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	kvm_clear_request(KVM_REQ_TRIPLE_FAULT, vcpu);
 	nested_vmx_vmexit(vcpu, EXIT_REASON_TRIPLE_FAULT, 0, 0);
@@ -5368,6 +5400,7 @@ int get_vmx_mem_address(struct kvm_vcpu *vcpu, unsigned long exit_qualification,
 
 static int nested_vmx_get_vmptr(struct kvm_vcpu *vcpu, gpa_t *vmpointer,
 				int *ret)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	gva_t gva;
 	struct x86_exception e;
@@ -5475,6 +5508,7 @@ out_vmcs02:
 
 /* Emulate the VMXON instruction. */
 static int handle_vmxon(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	int ret;
 	gpa_t vmptr;
@@ -5566,6 +5600,7 @@ static int handle_vmxon(struct kvm_vcpu *vcpu)
 }
 
 static inline void nested_release_vmcs12(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 
@@ -5608,6 +5643,7 @@ static int handle_vmxoff(struct kvm_vcpu *vcpu)
 
 /* Emulate the VMCLEAR instruction */
 static int handle_vmclear(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	u32 zero = 0;
@@ -5650,18 +5686,20 @@ static int handle_vmclear(struct kvm_vcpu *vcpu)
 
 /* Emulate the VMLAUNCH instruction */
 static int handle_vmlaunch(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	return nested_vmx_run(vcpu, true);
 }
 
 /* Emulate the VMRESUME instruction */
 static int handle_vmresume(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
-
 	return nested_vmx_run(vcpu, false);
 }
 
 static int handle_vmread(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vmcs12 *vmcs12 = is_guest_mode(vcpu) ? get_shadow_vmcs12(vcpu)
 						    : get_vmcs12(vcpu);
@@ -5768,6 +5806,7 @@ static bool is_shadow_field_ro(unsigned long field)
 }
 
 static int handle_vmwrite(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vmcs12 *vmcs12 = is_guest_mode(vcpu) ? get_shadow_vmcs12(vcpu)
 						    : get_vmcs12(vcpu);
@@ -5889,6 +5928,7 @@ static void set_current_vmptr(struct vcpu_vmx *vmx, gpa_t vmptr)
 
 /* Emulate the VMPTRLD instruction */
 static int handle_vmptrld(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	gpa_t vmptr;
@@ -5959,6 +5999,7 @@ static int handle_vmptrld(struct kvm_vcpu *vcpu)
 
 /* Emulate the VMPTRST instruction */
 static int handle_vmptrst(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	unsigned long exit_qual = vmx_get_exit_qual(vcpu);
 	u32 instr_info = vmcs_read32(VMX_INSTRUCTION_INFO);
@@ -5987,6 +6028,7 @@ static int handle_vmptrst(struct kvm_vcpu *vcpu)
 
 /* Emulate the INVEPT instruction */
 static int handle_invept(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	u32 vmx_instruction_info, types;
@@ -6067,6 +6109,7 @@ static int handle_invept(struct kvm_vcpu *vcpu)
 }
 
 static int handle_invvpid(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	u32 vmx_instruction_info;
@@ -6159,6 +6202,7 @@ static int handle_invvpid(struct kvm_vcpu *vcpu)
 
 static int nested_vmx_eptp_switching(struct kvm_vcpu *vcpu,
 				     struct vmcs12 *vmcs12)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	u32 index = kvm_ecx_read(vcpu);
 	u64 new_eptp;
@@ -6191,6 +6235,7 @@ static int nested_vmx_eptp_switching(struct kvm_vcpu *vcpu,
 }
 
 static int handle_vmfunc(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	struct vmcs12 *vmcs12;
@@ -6280,6 +6325,7 @@ bool nested_vmx_check_io_bitmaps(struct kvm_vcpu *vcpu, unsigned int port,
 
 static bool nested_vmx_exit_handled_io(struct kvm_vcpu *vcpu,
 				       struct vmcs12 *vmcs12)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	unsigned long exit_qualification;
 	unsigned short port;
@@ -6305,6 +6351,7 @@ static bool nested_vmx_exit_handled_io(struct kvm_vcpu *vcpu,
 static bool nested_vmx_exit_handled_msr(struct kvm_vcpu *vcpu,
 					struct vmcs12 *vmcs12,
 					union vmx_exit_reason exit_reason)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	u32 msr_index;
 	gpa_t bitmap;
@@ -6434,6 +6481,7 @@ static bool nested_vmx_exit_handled_encls(struct kvm_vcpu *vcpu,
 
 static bool nested_vmx_exit_handled_vmcs_access(struct kvm_vcpu *vcpu,
 	struct vmcs12 *vmcs12, gpa_t bitmap)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	u32 vmx_instruction_info;
 	unsigned long field;
@@ -6561,6 +6609,7 @@ static bool nested_vmx_l0_wants_exit(struct kvm_vcpu *vcpu,
  */
 static bool nested_vmx_l1_wants_exit(struct kvm_vcpu *vcpu,
 				     union vmx_exit_reason exit_reason)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vmcs12 *vmcs12 = get_vmcs12(vcpu);
 	u32 intr_info;
@@ -6908,6 +6957,7 @@ int nested_vmx_check_restored_vmcs12(struct kvm_vcpu *vcpu)
 static int vmx_set_nested_state(struct kvm_vcpu *vcpu,
 				struct kvm_nested_state __user *user_kvm_nested_state,
 				struct kvm_nested_state *kvm_state)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	struct vmcs12 *vmcs12;

@@ -56,15 +56,20 @@ static_assert(!(KVM_POSSIBLE_CR0_GUEST_BITS & X86_CR0_PDPTR_BITS));
 
 void kvm_post_set_cr0(struct kvm_vcpu *vcpu, unsigned long old_cr0, unsigned long cr0);
 void kvm_post_set_cr4(struct kvm_vcpu *vcpu, unsigned long old_cr4, unsigned long cr4);
-int kvm_set_cr0(struct kvm_vcpu *vcpu, unsigned long cr0);
-int kvm_set_cr3(struct kvm_vcpu *vcpu, unsigned long cr3);
-int kvm_set_cr4(struct kvm_vcpu *vcpu, unsigned long cr4);
+int kvm_set_cr0(struct kvm_vcpu *vcpu, unsigned long cr0)
+	__must_hold_shared(&vcpu->kvm->srcu);
+int kvm_set_cr3(struct kvm_vcpu *vcpu, unsigned long cr3)
+	__must_hold_shared(&vcpu->kvm->srcu);
+int kvm_set_cr4(struct kvm_vcpu *vcpu, unsigned long cr4)
+	__must_hold_shared(&vcpu->kvm->srcu);
 int kvm_set_cr8(struct kvm_vcpu *vcpu, unsigned long cr8);
 int kvm_set_dr(struct kvm_vcpu *vcpu, int dr, unsigned long val);
 unsigned long kvm_get_dr(struct kvm_vcpu *vcpu, int dr);
 unsigned long kvm_get_cr8(struct kvm_vcpu *vcpu);
-void kvm_lmsw(struct kvm_vcpu *vcpu, unsigned long msw);
-int load_pdptrs(struct kvm_vcpu *vcpu, unsigned long cr3);
+void kvm_lmsw(struct kvm_vcpu *vcpu, unsigned long msw)
+	__must_hold_shared(&vcpu->kvm->srcu);
+int load_pdptrs(struct kvm_vcpu *vcpu, unsigned long cr3)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 static inline bool is_long_mode(struct kvm_vcpu *vcpu)
 {

@@ -91,6 +91,7 @@ static int sgx_gva_to_gpa(struct kvm_vcpu *vcpu, gva_t gva, bool write,
 }
 
 static int sgx_gpa_to_hva(struct kvm_vcpu *vcpu, gpa_t gpa, unsigned long *hva)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	*hva = kvm_vcpu_gfn_to_hva(vcpu, PFN_DOWN(gpa));
 	if (kvm_is_error_hva(*hva)) {
@@ -216,6 +217,7 @@ static int __handle_encls_ecreate(struct kvm_vcpu *vcpu,
 }
 
 static int handle_encls_ecreate(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	gva_t pageinfo_gva, secs_gva;
 	gva_t metadata_gva, contents_gva;
@@ -296,6 +298,7 @@ static int handle_encls_ecreate(struct kvm_vcpu *vcpu)
 }
 
 static int handle_encls_einit(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu)
 {
 	unsigned long sig_hva, secs_hva, token_hva, rflags;
 	struct vcpu_vmx *vmx = to_vmx(vcpu);

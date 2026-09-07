@@ -26,16 +26,20 @@ void vmx_vcpu_free(struct kvm_vcpu *vcpu);
 void vmx_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event);
 void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu);
 void vmx_vcpu_put(struct kvm_vcpu *vcpu);
-int vmx_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath);
+int vmx_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath)
+	__must_hold_shared(&vcpu->kvm->srcu);
 void vmx_handle_exit_irqoff(struct kvm_vcpu *vcpu);
 int vmx_skip_emulated_instruction(struct kvm_vcpu *vcpu);
 void vmx_update_emulated_instruction(struct kvm_vcpu *vcpu);
 bool vmx_unhandleable_emulation_required(struct kvm_vcpu *vcpu);
-int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info);
+int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
+	__must_hold_shared(&vcpu->kvm->srcu);
 #ifdef CONFIG_KVM_SMM
 int vmx_smi_allowed(struct kvm_vcpu *vcpu, bool for_injection);
-int vmx_enter_smm(struct kvm_vcpu *vcpu, union kvm_smram *smram);
-int vmx_leave_smm(struct kvm_vcpu *vcpu, const union kvm_smram *smram);
+int vmx_enter_smm(struct kvm_vcpu *vcpu, union kvm_smram *smram)
+	__must_hold_shared(&vcpu->kvm->srcu);
+int vmx_leave_smm(struct kvm_vcpu *vcpu, const union kvm_smram *smram)
+	__must_hold_shared(&vcpu->kvm->srcu);
 void vmx_enable_smi_window(struct kvm_vcpu *vcpu);
 #endif
 int vmx_check_emulate_instruction(struct kvm_vcpu *vcpu, int emul_type,
@@ -43,7 +47,8 @@ int vmx_check_emulate_instruction(struct kvm_vcpu *vcpu, int emul_type,
 int vmx_check_intercept(struct kvm_vcpu *vcpu,
 			struct x86_instruction_info *info,
 			enum x86_intercept_stage stage,
-			struct x86_exception *exception);
+			struct x86_exception *exception)
+	__must_hold_shared(&vcpu->kvm->srcu);
 bool vmx_apic_init_signal_blocked(struct kvm_vcpu *vcpu);
 void vmx_migrate_timers(struct kvm_vcpu *vcpu);
 void vmx_set_virtual_apic_mode(struct kvm_vcpu *vcpu);
@@ -98,7 +103,8 @@ void vmx_set_nmi_mask(struct kvm_vcpu *vcpu, bool masked);
 void vmx_enable_nmi_window(struct kvm_vcpu *vcpu);
 void vmx_enable_irq_window(struct kvm_vcpu *vcpu);
 void vmx_update_cr8_intercept(struct kvm_vcpu *vcpu, int tpr, int irr);
-void vmx_set_apic_access_page_addr(struct kvm_vcpu *vcpu);
+void vmx_set_apic_access_page_addr(struct kvm_vcpu *vcpu)
+	__must_hold_shared(&vcpu->kvm->srcu);
 void vmx_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu);
 void vmx_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap);
 int vmx_set_tss_addr(struct kvm *kvm, unsigned int addr);
@@ -142,7 +148,8 @@ fastpath_t tdx_vcpu_run(struct kvm_vcpu *vcpu, u64 run_flags);
 void tdx_prepare_switch_to_guest(struct kvm_vcpu *vcpu);
 void tdx_vcpu_put(struct kvm_vcpu *vcpu);
 int tdx_handle_exit(struct kvm_vcpu *vcpu,
-		enum exit_fastpath_completion fastpath);
+		enum exit_fastpath_completion fastpath)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 void tdx_deliver_interrupt(struct kvm_lapic *apic, int delivery_mode,
 			   int trig_mode, int vector);
@@ -151,7 +158,8 @@ void tdx_get_exit_info(struct kvm_vcpu *vcpu, u32 *reason,
 		u64 *info1, u64 *info2, u32 *intr_info, u32 *error_code);
 bool tdx_has_emulated_msr(u32 index);
 int tdx_get_msr(struct kvm_vcpu *vcpu, struct msr_data *msr);
-int tdx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr);
+int tdx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr)
+	__must_hold_shared(&vcpu->kvm->srcu);
 
 int tdx_vcpu_ioctl(struct kvm_vcpu *vcpu, void __user *argp);
 int tdx_vcpu_unlocked_ioctl(struct kvm_vcpu *vcpu, void __user *argp);
