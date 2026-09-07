@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0
 
+CONTEXT_ANALYSIS := y
+
+# Opt out x86 objects pending context annotations:
+CONTEXT_ANALYSIS_mmu/mmu.o             := n
+CONTEXT_ANALYSIS_mmu/tdp_mmu.o         := n
+CONTEXT_ANALYSIS_i8259.o               := n
+CONTEXT_ANALYSIS_xen.o                 := n
+
 ccflags-y += -I $(srctree)/arch/x86/kvm
 ccflags-$(CONFIG_KVM_WERROR) += -Werror
 

@@ -17,6 +17,7 @@ src:*include/net/*
 src:*include/linux/bit_spinlock.h=emit
 src:*include/linux/cleanup.h=emit
 src:*include/linux/kref.h=emit
+src:*include/linux/kvm_host.h=emit
 src:*include/linux/list*.h=emit
 src:*include/linux/local_lock*.h=emit
 src:*include/linux/lockdep.h=emit
