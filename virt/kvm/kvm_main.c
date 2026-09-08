@@ -2485,14 +2485,13 @@ bool kvm_range_has_memory_attributes(struct kvm *kvm, gfn_t start, gfn_t end,
 	return true;
 }
 
-static __always_inline void kvm_handle_gfn_range(struct kvm *kvm,
-						 struct kvm_mmu_notifier_range *range)
+static __always_inline bool __kvm_handle_gfn_range_walk(struct kvm *kvm,
+							struct kvm_mmu_notifier_range *range)
 {
 	struct kvm_gfn_range gfn_range;
 	struct kvm_memory_slot *slot;
 	struct kvm_memslots *slots;
 	struct kvm_memslot_iter iter;
-	bool found_memslot = false;
 	bool ret = false;
 	int i;
 
@@ -2519,22 +2518,45 @@ static __always_inline void kvm_handle_gfn_range(struct kvm *kvm,
 			if (gfn_range.start >= gfn_range.end)
 				continue;
 
-			if (!found_memslot) {
-				found_memslot = true;
-				KVM_MMU_LOCK(kvm);
-				if (!IS_KVM_NULL_FN(range->on_lock))
-					range->on_lock(kvm);
-			}
-
 			ret |= range->handler(kvm, &gfn_range);
 		}
 	}
 
+	return ret;
+}
+
+static __always_inline void kvm_handle_gfn_range(struct kvm *kvm,
+						 struct kvm_mmu_notifier_range *range)
+{
+	struct kvm_memslot_iter iter;
+	struct kvm_memslots *slots;
+	bool found_memslot = false;
+	bool ret;
+	int i;
+
+	for (i = 0; i < kvm_arch_nr_memslot_as_ids(kvm); i++) {
+		slots = __kvm_memslots(kvm, i);
+		kvm_for_each_memslot_in_gfn_range(&iter, slots, range->start, range->end) {
+			found_memslot = true;
+			break;
+		}
+		if (found_memslot)
+			break;
+	}
+
+	if (!found_memslot)
+		return;
+
+	KVM_MMU_LOCK(kvm);
+	if (!IS_KVM_NULL_FN(range->on_lock))
+		range->on_lock(kvm);
+
+	ret = __kvm_handle_gfn_range_walk(kvm, range);
+
 	if (range->flush_on_ret && ret)
 		kvm_flush_remote_tlbs(kvm);
 
-	if (found_memslot)
-		KVM_MMU_UNLOCK(kvm);
+	KVM_MMU_UNLOCK(kvm);
 }
 
 static bool kvm_pre_set_memory_attributes(struct kvm *kvm,
