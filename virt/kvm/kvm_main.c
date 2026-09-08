@@ -1111,6 +1111,7 @@ void __weak kvm_arch_create_vm_debugfs(struct kvm *kvm)
 /* Called only on cleanup and destruction paths when there are no users. */
 static inline struct kvm_io_bus *kvm_get_bus_for_destruction(struct kvm *kvm,
 							     enum kvm_bus idx)
+	__context_unsafe(/* destruction */)
 {
 	return rcu_dereference_protected(kvm->buses[idx],
 					 !refcount_read(&kvm->users_count));
@@ -1120,6 +1121,7 @@ static int kvm_enable_virtualization(void);
 static void kvm_disable_virtualization(void);
 
 static struct kvm *kvm_create_vm(unsigned long type, const char *fdname)
+	__context_unsafe(/* constructor */)
 {
 	struct kvm *kvm = kvm_arch_alloc_vm();
 	struct kvm_memslots *slots;
@@ -1276,6 +1278,7 @@ static void kvm_destroy_devices(struct kvm *kvm)
 }
 
 static void kvm_destroy_vm(struct kvm *kvm)
+	__context_unsafe(/* destructor */)
 {
 	int i;
 	struct mm_struct *mm = kvm->mm;

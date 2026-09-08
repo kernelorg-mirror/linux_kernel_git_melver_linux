@@ -771,7 +771,7 @@ struct kvm {
 	/* The two memslot sets - active and inactive (per address space) */
 	struct kvm_memslots __memslots[KVM_MAX_NR_ADDRESS_SPACES][2];
 	/* The current active memslot set for each address space */
-	struct kvm_memslots __rcu *memslots[KVM_MAX_NR_ADDRESS_SPACES];
+	struct kvm_memslots __rcu *memslots[KVM_MAX_NR_ADDRESS_SPACES] __guarded_by(&srcu, &slots_lock, &slots_arch_lock);
 	struct xarray vcpu_array;
 	DECLARE_BITMAP(vcpu_ids, KVM_MAX_VCPU_IDS);
 	/*
@@ -787,7 +787,7 @@ struct kvm {
 
 	/* For management / invalidation of gfn_to_pfn_caches */
 	spinlock_t gpc_lock;
-	struct list_head gpc_list;
+	struct list_head gpc_list __guarded_by(&gpc_lock);
 
 	/*
 	 * created_vcpus is protected by kvm->lock, and is incremented
@@ -801,11 +801,11 @@ struct kvm {
 	int last_boosted_vcpu;
 	struct list_head vm_list;
 	struct mutex lock;
-	struct kvm_io_bus __rcu *buses[KVM_NR_BUSES];
+	struct kvm_io_bus __rcu *buses[KVM_NR_BUSES] __guarded_by(&srcu, &slots_lock);
 #ifdef CONFIG_HAVE_KVM_IRQCHIP
 	struct {
 		spinlock_t        lock;
-		struct list_head  items;
+		struct list_head  items __guarded_by(&lock);
 		/* resampler_list update side is protected by resampler_lock. */
 		struct list_head  resampler_list;
 		struct mutex      resampler_lock;
@@ -826,9 +826,9 @@ struct kvm {
 	/*
 	 * Update side is protected by irq_lock.
 	 */
-	struct kvm_irq_routing_table __rcu *irq_routing;
+	struct kvm_irq_routing_table __rcu *irq_routing __guarded_by(&irq_srcu, &irq_lock);
 
-	struct hlist_head irq_ack_notifier_list;
+	struct hlist_head irq_ack_notifier_list __guarded_by(&irq_srcu, &irq_lock);
 #endif
 
 	struct mmu_notifier mmu_notifier;
