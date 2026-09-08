@@ -9813,8 +9813,8 @@ int kvm_arch_enable_virtualization_cpu(void)
 			 * you may have some problem.  Solving this issue is
 			 * left as an exercise to the reader.
 			 */
-			kvm->arch.last_tsc_nsec = 0;
-			kvm->arch.last_tsc_write = 0;
+			data_race(kvm->arch.last_tsc_nsec = 0);
+			data_race(kvm->arch.last_tsc_write = 0);
 		}
 
 	}
@@ -9927,8 +9927,8 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 	kvm->arch.enable_pmu = enable_pmu && !kvm->arch.has_protected_pmu;
 
 #if IS_ENABLED(CONFIG_HYPERV)
-	spin_lock_init(&kvm->arch.hv_root_tdp_lock);
-	kvm->arch.hv_root_tdp = INVALID_PAGE;
+	scoped_guard(spinlock_init, &kvm->arch.hv_root_tdp_lock)
+		kvm->arch.hv_root_tdp = INVALID_PAGE;
 #endif
 
 	kvm_apicv_init(kvm);

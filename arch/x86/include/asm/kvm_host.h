@@ -1073,20 +1073,20 @@ struct kvm_hv {
 	struct mutex hv_lock;
 	u64 hv_guest_os_id;
 	u64 hv_hypercall;
-	u64 hv_tsc_page;
+	u64 hv_tsc_page __guarded_by(&hv_lock);
 	enum hv_tsc_page_status hv_tsc_page_status;
 
 	/* Hyper-v based guest crash (NT kernel bugcheck) parameters */
-	u64 hv_crash_param[HV_X64_MSR_CRASH_PARAMS];
-	u64 hv_crash_ctl;
+	u64 hv_crash_param[HV_X64_MSR_CRASH_PARAMS] __guarded_by(&hv_lock);
+	u64 hv_crash_ctl __guarded_by(&hv_lock);
 
 	struct ms_hyperv_tsc_page tsc_ref;
 
 	struct idr conn_to_evt;
 
-	u64 hv_reenlightenment_control;
-	u64 hv_tsc_emulation_control;
-	u64 hv_tsc_emulation_status;
+	u64 hv_reenlightenment_control __guarded_by(&hv_lock);
+	u64 hv_tsc_emulation_control __guarded_by(&hv_lock);
+	u64 hv_tsc_emulation_status __guarded_by(&hv_lock);
 	u64 hv_invtsc_control;
 
 	/* How many vCPUs have VP index != vCPU index */
@@ -1232,15 +1232,15 @@ struct kvm_arch {
 	 * preemption-disabled region, so it must be a raw spinlock.
 	 */
 	raw_spinlock_t tsc_write_lock;
-	u64 last_tsc_nsec;
-	u64 last_tsc_write;
-	u32 last_tsc_khz;
-	u64 last_tsc_offset;
-	u64 cur_tsc_nsec;
-	u64 cur_tsc_write;
-	u64 cur_tsc_offset;
-	u64 cur_tsc_generation;
-	int nr_vcpus_matched_tsc;
+	u64 last_tsc_nsec __guarded_by(&tsc_write_lock);
+	u64 last_tsc_write __guarded_by(&tsc_write_lock);
+	u32 last_tsc_khz __guarded_by(&tsc_write_lock);
+	u64 last_tsc_offset __guarded_by(&tsc_write_lock);
+	u64 cur_tsc_nsec __guarded_by(&tsc_write_lock);
+	u64 cur_tsc_write __guarded_by(&tsc_write_lock);
+	u64 cur_tsc_offset __guarded_by(&tsc_write_lock);
+	u64 cur_tsc_generation __guarded_by(&tsc_write_lock);
+	int nr_vcpus_matched_tsc __guarded_by(&tsc_write_lock);
 
 	u32 default_tsc_khz;
 	bool user_set_tsc;
@@ -1370,7 +1370,7 @@ struct kvm_arch {
 #endif
 
 #if IS_ENABLED(CONFIG_HYPERV)
-	hpa_t	hv_root_tdp;
+	hpa_t	hv_root_tdp __guarded_by(&hv_root_tdp_lock);
 	spinlock_t hv_root_tdp_lock;
 	struct hv_partition_assist_pg *hv_pa_pg;
 #endif

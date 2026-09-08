@@ -70,19 +70,19 @@ union kvm_ioapic_redirect_entry {
 
 struct kvm_ioapic {
 	u64 base_address;
-	u32 ioregsel;
-	u32 id;
-	u32 irr;
+	u32 ioregsel __guarded_by(&lock);
+	u32 id __guarded_by(&lock);
+	u32 irr __guarded_by(&lock);
 	u32 pad;
-	union kvm_ioapic_redirect_entry redirtbl[IOAPIC_NUM_PINS];
-	unsigned long irq_states[IOAPIC_NUM_PINS];
+	union kvm_ioapic_redirect_entry redirtbl[IOAPIC_NUM_PINS] __guarded_by(&lock);
+	unsigned long irq_states[IOAPIC_NUM_PINS] __guarded_by(&lock);
 	struct kvm_io_device dev;
 	struct kvm *kvm;
 	spinlock_t lock;
-	struct rtc_status rtc_status;
+	struct rtc_status rtc_status __guarded_by(&lock);
 	struct delayed_work eoi_inject;
-	u32 irq_eoi[IOAPIC_NUM_PINS];
-	u32 irr_delivered;
+	u32 irq_eoi[IOAPIC_NUM_PINS] __guarded_by(&lock);
+	u32 irr_delivered __guarded_by(&lock);
 
 	/* reads protected by irq_srcu, writes by irq_lock */
 	struct hlist_head mask_notifier_list;

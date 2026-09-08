@@ -739,11 +739,11 @@ int kvm_ioapic_init(struct kvm *kvm)
 	ioapic = kzalloc_obj(struct kvm_ioapic, GFP_KERNEL_ACCOUNT);
 	if (!ioapic)
 		return -ENOMEM;
-	spin_lock_init(&ioapic->lock);
 	INIT_DELAYED_WORK(&ioapic->eoi_inject, kvm_ioapic_eoi_inject_work);
 	INIT_HLIST_HEAD(&ioapic->mask_notifier_list);
 	kvm->arch.vioapic = ioapic;
-	kvm_ioapic_reset(ioapic);
+	scoped_guard(spinlock_init, &ioapic->lock)
+		kvm_ioapic_reset(ioapic);
 	kvm_iodevice_init(&ioapic->dev, &ioapic_mmio_ops);
 	ioapic->kvm = kvm;
 	mutex_lock(&kvm->slots_lock);
